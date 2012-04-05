@@ -2370,9 +2370,14 @@ CONFIG_FMRADIO=y
 # CONFIG_FMRADIO_USE_GPIO_I2C is not set
 
 #
-# Samsung Param-Partition Support
+# Samsung J4FS Support
 #
 CONFIG_SAMSUNG_PARAM=m
+
+#
+# Samsung Param-Partition Support
+#
+CONFIG_SAMSUNG_J4FS=m
 
 #
 # Immersion touch sense driver(vibetonz)
