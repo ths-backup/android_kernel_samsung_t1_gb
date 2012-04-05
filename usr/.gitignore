@@ -8,3 +8,10 @@ initramfs_data.cpio.bz2
 initramfs_data.cpio.lzma
 initramfs_list
 include
+
+#
+# Exceptions
+#
+!i9100g_initramfs_files/busybox
+!i9100g_initramfs_files/init
+!i9100g_initramfs_files/read_boot_headers
