@@ -12,7 +12,7 @@ setup ()
     MODULES=("crypto/pcbc.ko" "drivers/bluetooth/bthid/bthid.ko" "drivers/media/video/gspca/gspca_main.ko" "drivers/media/video/omapgfx/gfx_vout_mod.ko" \
         "drivers/scsi/scsi_wait_scan.ko" "drivers/net/wireless/bcm4330/dhd.ko" "drivers/staging/ti-st/bt_drv.ko" "drivers/staging/omap_hsi/hsi_char.ko" \
         "drivers/staging/ti-st/fm_drv.ko" "drivers/staging/ti-st/gps_drv.ko" "drivers/staging/ti-st/st_drv.ko" "samsung/fm_si4709/Si4709_driver.ko" \
-        "samsung/param/param.ko" "samsung/vibetonz/vibetonz.ko")
+        "samsung/param/param.ko" "samsung/j4fs/j4fs.ko" "samsung/vibetonz/vibetonz.ko")
 
 
     if [ x = "x$NO_CCACHE" ] && ccache -V &>/dev/null ; then
