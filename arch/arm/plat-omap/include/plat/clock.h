@@ -14,11 +14,28 @@
 #define __ARCH_ARM_OMAP_CLOCK_H
 
 #include <linux/list.h>
+#include <linux/notifier.h>
 
 struct module;
 struct clk;
 struct clockdomain;
 
+/**
+ * struct clkops - some clock function pointers
+ * @enable: fn ptr that enables the current clock in hardware
+ * @disable: fn ptr that enables the current clock in hardware
+ * @find_idlest: function returning the IDLEST register for the clock's IP blk
+ * @find_companion: function returning the "companion" clk reg for the clock
+ *
+ * A "companion" clk is an accompanying clock to the one being queried
+ * that must be enabled for the IP module connected to the clock to
+ * become accessible by the hardware.  Neither @find_idlest nor
+ * @find_companion should be needed; that information is IP
+ * block-specific; the hwmod code has been created to handle this, but
+ * until hwmod data is ready and drivers have been converted to use PM
+ * runtime calls in place of clk_enable()/clk_disable(), @find_idlest and
+ * @find_companion must, unfortunately, remain.
+ */
 struct clkops {
 	int			(*enable)(struct clk *);
 	void			(*disable)(struct clk *);
@@ -30,12 +47,45 @@ struct clkops {
 
 #ifdef CONFIG_ARCH_OMAP2PLUS
 
+/* struct clksel_rate.flags possibilities */
+#define RATE_IN_242X		(1 << 0)
+#define RATE_IN_243X		(1 << 1)
+#define RATE_IN_3XXX		(1 << 2)	/* rates common to all OMAP3 */
+#define RATE_IN_3430ES2		(1 << 3)	/* 3430ES2 rates only */
+#define RATE_IN_36XX		(1 << 4)
+#define RATE_IN_4430		(1 << 5)
+
+#define RATE_IN_24XX		(RATE_IN_242X | RATE_IN_243X)
+#define RATE_IN_3430ES2PLUS	(RATE_IN_3430ES2 | RATE_IN_36XX)
+
+/**
+ * struct clksel_rate - register bitfield values corresponding to clk divisors
+ * @val: register bitfield value (shifted to bit 0)
+ * @div: clock divisor corresponding to @val
+ * @flags: (see "struct clksel_rate.flags possibilities" above)
+ *
+ * @val should match the value of a read from struct clk.clksel_reg
+ * AND'ed with struct clk.clksel_mask, shifted right to bit 0.
+ *
+ * @div is the divisor that should be applied to the parent clock's rate
+ * to produce the current clock's rate.
+ *
+ * XXX @flags probably should be replaced with an struct omap_chip.
+ */
 struct clksel_rate {
 	u32			val;
 	u8			div;
 	u8			flags;
 };
 
+/**
+ * struct clksel - available parent clocks, and a pointer to their divisors
+ * @parent: struct clk * to a possible parent clock
+ * @rates: available divisors for this parent clock
+ *
+ * A struct clksel is always associated with one or more struct clks
+ * and one or more struct clksel_rates.
+ */
 struct clksel {
 	struct clk		 *parent;
 	const struct clksel_rate *rates;
@@ -70,8 +120,7 @@ struct clksel {
  *
  * Possible values for @flags:
  * DPLL_J_TYPE: "J-type DPLL" (only some 36xx, 4xxx DPLLs)
- * NO_DCO_SEL: don't program DCO (only for some J-type DPLLs)
-
+ *
  * @freqsel_mask is only used on the OMAP34xx family and AM35xx.
  *
  * XXX Some DPLLs have multiple bypass inputs, so it's not technically
@@ -107,6 +156,9 @@ struct dpll_data {
 	u32			autoidle_mask;
 	u32			freqsel_mask;
 	u32			idlest_mask;
+	u32			dco_mask;
+	u32			sddiv_mask;
+	u32			mn_bypass_st_mask;
 	u8			auto_recal_bit;
 	u8			recal_en_bit;
 	u8			recal_st_bit;
@@ -116,6 +168,121 @@ struct dpll_data {
 
 #endif
 
+/*
+ * Clk notifier callback types
+ *
+ * Since the notifier is called with interrupts disabled, any actions
+ * taken by callbacks must be extremely fast and lightweight.
+ *
+ * CLK_PRE_RATE_CHANGE - called after all callbacks have approved the
+ *     rate change, immediately before the clock rate is changed, to
+ *     indicate that the rate change will proceed.  Drivers must
+ *     immediately terminate any operations that will be affected by
+ *     the rate change.  Callbacks must always return NOTIFY_DONE.
+ *
+ * CLK_ABORT_RATE_CHANGE: called if the rate change failed for some
+ *     reason after CLK_PRE_RATE_CHANGE.  In this case, all registered
+ *     notifiers on the clock will be called with
+ *     CLK_ABORT_RATE_CHANGE. Callbacks must always return
+ *     NOTIFY_DONE.
+ *
+ * CLK_POST_RATE_CHANGE - called after the clock rate change has
+ *     successfully completed.  Callbacks must always return
+ *     NOTIFY_DONE.
+ *
+ */
+#define CLK_ABORT_RATE_CHANGE		2
+#define CLK_PRE_RATE_CHANGE		3
+#define CLK_POST_RATE_CHANGE		4
+
+/**
+ * struct clk_notifier - associate a clk with a notifier
+ * @clk: struct clk * to associate the notifier with
+ * @notifier_head: a blocking_notifier_head for this clk
+ * @node: linked list pointers
+ *
+ * A list of struct clk_notifier is maintained by the notifier code.
+ * An entry is created whenever code registers the first notifier on a
+ * particular @clk.  Future notifiers on that @clk are added to the
+ * @notifier_head.
+ */
+struct clk_notifier {
+	struct clk			*clk;
+	struct blocking_notifier_head	notifier_head;
+	struct list_head		node;
+};
+
+/**
+ * struct clk_notifier_data - rate data to pass to the notifier callback
+ * @clk: struct clk * being changed
+ * @old_rate: previous rate of this clock
+ * @new_rate: new rate of this clock
+ *
+ * For a pre-notifier, old_rate is the clock's rate before this rate
+ * change, and new_rate is what the rate will be in the future.  For a
+ * post-notifier, old_rate and new_rate are both set to the clock's
+ * current rate (this was done to optimize the implementation).
+ */
+struct clk_notifier_data {
+	struct clk		*clk;
+	unsigned long		old_rate;
+	unsigned long		new_rate;
+};
+
+/* struct clk.flags possibilities */
+#define ENABLE_REG_32BIT	(1 << 0)	/* Use 32-bit access */
+#define CLOCK_IDLE_CONTROL	(1 << 1)
+#define CLOCK_NO_IDLE_PARENT	(1 << 2)
+#define ENABLE_ON_INIT		(1 << 3)	/* Enable upon framework init */
+#define INVERT_ENABLE		(1 << 4)	/* 0 enables, 1 disables */
+
+/**
+ * struct clk - OMAP struct clk
+ * @node: list_head connecting this clock into the full clock list
+ * @ops: struct clkops * for this clock
+ * @name: the name of the clock in the hardware (used in hwmod data and debug)
+ * @parent: pointer to this clock's parent struct clk
+ * @children: list_head connecting to the child clks' @sibling list_heads
+ * @sibling: list_head connecting this clk to its parent clk's @children
+ * @rate: current clock rate
+ * @enable_reg: register to write to enable the clock (see @enable_bit)
+ * @recalc: fn ptr that returns the clock's current rate
+ * @set_rate: fn ptr that can change the clock's current rate
+ * @round_rate: fn ptr that can round the clock's current rate
+ * @init: fn ptr to do clock-specific initialization
+ * @enable_bit: bitshift to write to enable/disable the clock (see @enable_reg)
+ * @usecount: number of users that have requested this clock to be enabled
+ * @fixed_div: when > 0, this clock's rate is its parent's rate / @fixed_div
+ * @flags: see "struct clk.flags possibilities" above
+ * @clksel_reg: for clksel clks, register va containing src/divisor select
+ * @clksel_mask: bitmask in @clksel_reg for the src/divisor selector
+ * @clksel: for clksel clks, pointer to struct clksel for this clock
+ * @dpll_data: for DPLLs, pointer to struct dpll_data for this clock
+ * @clkdm_name: clockdomain name that this clock is contained in
+ * @clkdm: pointer to struct clockdomain, resolved from @clkdm_name at runtime
+ * @rate_offset: bitshift for rate selection bitfield (OMAP1 only)
+ * @src_offset: bitshift for source selection bitfield (OMAP1 only)
+ *
+ * XXX @rate_offset, @src_offset should probably be removed and OMAP1
+ * clock code converted to use clksel.
+ *
+ * XXX @usecount is poorly named.  It should be "enable_count" or
+ * something similar.  "users" in the description refers to kernel
+ * code (core code or drivers) that have called clk_enable() and not
+ * yet called clk_disable(); the usecount of parent clocks is also
+ * incremented by the clock code when clk_enable() is called on child
+ * clocks and decremented by the clock code when clk_disable() is
+ * called on child clocks.
+ *
+ * XXX @clkdm, @usecount, @children, @sibling should be marked for
+ * internal use only.
+ *
+ * @children and @sibling are used to optimize parent-to-child clock
+ * tree traversals.  (child-to-parent traversals use @parent.)
+ *
+ * XXX The notion of the clock's current rate probably needs to be
+ * separated from the clock's target rate.
+ */
 struct clk {
 	struct list_head	node;
 	const struct clkops	*ops;
@@ -126,11 +293,13 @@ struct clk {
 	unsigned long		rate;
 	void __iomem		*enable_reg;
 	unsigned long		(*recalc)(struct clk *);
+	unsigned long		(*speculate)(struct clk *, unsigned long);
 	int			(*set_rate)(struct clk *, unsigned long);
 	long			(*round_rate)(struct clk *, unsigned long);
 	void			(*init)(struct clk *);
-	__u8			enable_bit;
-	__s8			usecount;
+	u16			notifier_count;
+	u8			enable_bit;
+	s8			usecount;
 	u8			fixed_div;
 	u8			flags;
 #ifdef CONFIG_ARCH_OMAP2PLUS
@@ -141,8 +310,8 @@ struct clk {
 	const char		*clkdm_name;
 	struct clockdomain	*clkdm;
 #else
-	__u8			rate_offset;
-	__u8			src_offset;
+	u8			rate_offset;
+	u8			src_offset;
 #endif
 #if defined(CONFIG_PM_DEBUG) && defined(CONFIG_DEBUG_FS)
 	struct dentry		*dent;	/* For visible tree hierarchy */
@@ -155,6 +324,8 @@ struct clk_functions {
 	int		(*clk_enable)(struct clk *clk);
 	void		(*clk_disable)(struct clk *clk);
 	long		(*clk_round_rate)(struct clk *clk, unsigned long rate);
+	long		(*clk_round_rate_parent)(struct clk *clk,
+						 struct clk *parent);
 	int		(*clk_set_rate)(struct clk *clk, unsigned long rate);
 	int		(*clk_set_parent)(struct clk *clk, struct clk *parent);
 	void		(*clk_allow_idle)(struct clk *clk);
@@ -177,6 +348,8 @@ extern void propagate_rate(struct clk *clk);
 extern void recalculate_root_clocks(void);
 extern unsigned long followparent_recalc(struct clk *clk);
 extern void clk_enable_init_clocks(void);
+extern int clk_notifier_register(struct clk *clk, struct notifier_block *nb);
+extern int clk_notifier_unregister(struct clk *clk, struct notifier_block *nb);
 unsigned long omap_fixed_divisor_recalc(struct clk *clk);
 #ifdef CONFIG_CPU_FREQ
 extern void clk_init_cpufreq_table(struct cpufreq_frequency_table **table);
@@ -187,24 +360,5 @@ extern struct clk *omap_clk_get_by_name(const char *name);
 extern const struct clkops clkops_null;
 
 extern struct clk dummy_ck;
-
-/* Clock flags */
-#define ENABLE_REG_32BIT	(1 << 0)	/* Use 32-bit access */
-#define CLOCK_IDLE_CONTROL	(1 << 1)
-#define CLOCK_NO_IDLE_PARENT	(1 << 2)
-#define ENABLE_ON_INIT		(1 << 3)	/* Enable upon framework init */
-#define INVERT_ENABLE		(1 << 4)	/* 0 enables, 1 disables */
-
-/* Clksel_rate flags */
-#define RATE_IN_242X		(1 << 0)
-#define RATE_IN_243X		(1 << 1)
-#define RATE_IN_3XXX		(1 << 2)	/* rates common to all OMAP3 */
-#define RATE_IN_3430ES2		(1 << 3)	/* 3430ES2 rates only */
-#define RATE_IN_36XX		(1 << 4)
-#define RATE_IN_4430		(1 << 5)
-
-#define RATE_IN_24XX		(RATE_IN_242X | RATE_IN_243X)
-
-#define RATE_IN_3430ES2PLUS	(RATE_IN_3430ES2 | RATE_IN_36XX)
 
 #endif

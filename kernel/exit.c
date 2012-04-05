@@ -963,7 +963,11 @@ NORET_TYPE void do_exit(long code)
 	exit_mm(tsk);
 
 	if (group_dead)
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+		acct_process(1,0);
+#else
 		acct_process();
+#endif
 	trace_sched_process_exit(tsk);
 
 	exit_sem(tsk);

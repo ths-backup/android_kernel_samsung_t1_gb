@@ -19,6 +19,11 @@
 #include <linux/stringify.h>
 
 #include <plat/iommu.h>
+#include <plat/omap_device.h>
+#ifdef CONFIG_OMAP_PM
+#include <plat/omap-pm.h>
+#endif
+
 
 /*
  * omap2 architecture specific register bit definitions
@@ -44,9 +49,13 @@
 #define MMU_IRQ_EMUMISS		(1 << 2)
 #define MMU_IRQ_TRANSLATIONFAULT	(1 << 1)
 #define MMU_IRQ_TLBMISS		(1 << 0)
-#define MMU_IRQ_MASK	\
-	(MMU_IRQ_MULTIHITFAULT | MMU_IRQ_TABLEWALKFAULT | MMU_IRQ_EMUMISS | \
-	 MMU_IRQ_TRANSLATIONFAULT)
+
+#define __MMU_IRQ_FAULT		\
+	(MMU_IRQ_MULTIHITFAULT | MMU_IRQ_EMUMISS | MMU_IRQ_TRANSLATIONFAULT)
+#define MMU_IRQ_MASK		\
+	(__MMU_IRQ_FAULT | MMU_IRQ_TABLEWALKFAULT | MMU_IRQ_TLBMISS)
+#define MMU_IRQ_TWL_MASK	(__MMU_IRQ_FAULT | MMU_IRQ_TABLEWALKFAULT)
+#define MMU_IRQ_TLB_MISS_MASK	(__MMU_IRQ_FAULT | MMU_IRQ_TLBMISS)
 
 /* MMU_CNTL */
 #define MMU_CNTL_SHIFT		1
@@ -61,10 +70,40 @@
 	 ((pgsz) == MMU_CAM_PGSZ_64K) ? 0xffff0000 :	\
 	 ((pgsz) == MMU_CAM_PGSZ_4K)  ? 0xfffff000 : 0)
 
+#ifdef CONFIG_OMAP_PM
+struct pm_qos_request_list *pm_iommu1_handle;
+#define PM_IOMMU1_SDMA_LAT_CONSTRAINT	400
+#define PM_IOMMU1_NO_LAT_CONSTRAINT	-1
+#endif
+
+static void omap2_iommu_set_twl(struct iommu *obj, bool on)
+{
+	u32 l = iommu_read_reg(obj, MMU_CNTL);
+
+	if (on)
+		iommu_write_reg(obj, MMU_IRQ_TWL_MASK, MMU_IRQENABLE);
+	else
+		iommu_write_reg(obj, MMU_IRQ_TLB_MISS_MASK, MMU_IRQENABLE);
+
+	l &= ~MMU_CNTL_MASK;
+	if (on)
+		l |= (MMU_CNTL_MMU_EN | MMU_CNTL_TWL_EN);
+	else
+		l |= (MMU_CNTL_MMU_EN);
+
+	iommu_write_reg(obj, l, MMU_CNTL);
+}
+
+static u32 omap2_get_version(struct iommu *obj)
+{
+	return iommu_read_reg(obj, MMU_REVISION);
+}
+
 static int omap2_iommu_enable(struct iommu *obj)
 {
 	u32 l, pa;
 	unsigned long timeout;
+	int ret = 0;
 
 	if (!obj->iopgd || !IS_ALIGNED((u32)obj->iopgd,  SZ_16K))
 		return -EINVAL;
@@ -72,6 +111,21 @@ static int omap2_iommu_enable(struct iommu *obj)
 	pa = virt_to_phys(obj->iopgd);
 	if (!IS_ALIGNED(pa, SZ_16K))
 		return -EINVAL;
+
+#ifdef CONFIG_OMAP_PM
+	if (!strcmp(obj->name, "ducati")) {
+		ret = omap_pm_set_max_sdma_lat(&pm_iommu1_handle,
+				PM_IOMMU1_SDMA_LAT_CONSTRAINT);
+		if (ret) {
+			pr_err("omap2_iommu_enable - Unable to set constraint "
+				"on CORE domain\n");
+		}
+	}
+#endif
+
+	ret = omap_device_enable(obj->pdev);
+	if (ret)
+		return ret;
 
 	iommu_write_reg(obj, MMU_SYS_SOFTRESET, MMU_SYSCONFIG);
 
@@ -96,19 +150,20 @@ static int omap2_iommu_enable(struct iommu *obj)
 	l |= (MMU_SYS_IDLE_SMART | MMU_SYS_AUTOIDLE);
 	iommu_write_reg(obj, l, MMU_SYSCONFIG);
 
-	iommu_write_reg(obj, MMU_IRQ_MASK, MMU_IRQENABLE);
 	iommu_write_reg(obj, pa, MMU_TTB);
 
-	l = iommu_read_reg(obj, MMU_CNTL);
-	l &= ~MMU_CNTL_MASK;
-	l |= (MMU_CNTL_MMU_EN | MMU_CNTL_TWL_EN);
-	iommu_write_reg(obj, l, MMU_CNTL);
+	omap2_iommu_set_twl(obj, true);
+
+	if (cpu_is_omap44xx())
+		iommu_write_reg(obj, 0x1, MMU_GP_REG);
 
 	return 0;
 }
 
 static void omap2_iommu_disable(struct iommu *obj)
 {
+	int ret = 0;
+
 	u32 l = iommu_read_reg(obj, MMU_CNTL);
 
 	l &= ~MMU_CNTL_MASK;
@@ -116,6 +171,20 @@ static void omap2_iommu_disable(struct iommu *obj)
 	iommu_write_reg(obj, MMU_SYS_IDLE_FORCE, MMU_SYSCONFIG);
 
 	dev_dbg(obj->dev, "%s is shutting down\n", obj->name);
+	if (omap_device_shutdown(obj->pdev))
+		dev_err(obj->dev, "%s err 0x%x\n", __func__, ret);
+
+#ifdef CONFIG_OMAP_PM
+	if (!strcmp(obj->name, "ducati")) {
+		int status1 = omap_pm_set_max_sdma_lat(&pm_iommu1_handle,
+					PM_IOMMU1_NO_LAT_CONSTRAINT);
+		if (status1) {
+			pr_err("omap2_iommu_disable failed to release "
+				"constraint on CORE domain\n");
+		}
+	}
+#endif
+
 }
 
 static u32 omap2_iommu_fault_isr(struct iommu *obj, u32 *ra)
@@ -146,8 +215,8 @@ static u32 omap2_iommu_fault_isr(struct iommu *obj, u32 *ra)
 	}
 	printk("\n");
 
-	iommu_write_reg(obj, stat, MMU_IRQSTATUS);
-	omap2_iommu_disable(obj);
+	/* Disable further interrupts */
+	iommu_write_reg(obj, 0, MMU_IRQENABLE);
 	return stat;
 }
 
@@ -254,34 +323,12 @@ static ssize_t omap2_iommu_dump_ctx(struct iommu *obj, char *buf, ssize_t len)
 	pr_reg(READ_CAM);
 	pr_reg(READ_RAM);
 	pr_reg(EMU_FAULT_AD);
+if (cpu_is_omap44xx()) {
+	pr_reg(FAULT_PC);
+	pr_reg(FAULT_STATUS);
+}
 out:
 	return p - buf;
-}
-
-static void omap2_iommu_save_ctx(struct iommu *obj)
-{
-	int i;
-	u32 *p = obj->ctx;
-
-	for (i = 0; i < (MMU_REG_SIZE / sizeof(u32)); i++) {
-		p[i] = iommu_read_reg(obj, i * sizeof(u32));
-		dev_dbg(obj->dev, "%s\t[%02d] %08x\n", __func__, i, p[i]);
-	}
-
-	BUG_ON(p[0] != IOMMU_ARCH_VERSION);
-}
-
-static void omap2_iommu_restore_ctx(struct iommu *obj)
-{
-	int i;
-	u32 *p = obj->ctx;
-
-	for (i = 0; i < (MMU_REG_SIZE / sizeof(u32)); i++) {
-		iommu_write_reg(obj, p[i], i * sizeof(u32));
-		dev_dbg(obj->dev, "%s\t[%02d] %08x\n", __func__, i, p[i]);
-	}
-
-	BUG_ON(p[0] != IOMMU_ARCH_VERSION);
 }
 
 static void omap2_cr_to_e(struct cr_regs *cr, struct iotlb_entry *e)
@@ -289,6 +336,7 @@ static void omap2_cr_to_e(struct cr_regs *cr, struct iotlb_entry *e)
 	e->da		= cr->cam & MMU_CAM_VATAG_MASK;
 	e->pa		= cr->ram & MMU_RAM_PADDR_MASK;
 	e->valid	= cr->cam & MMU_CAM_V;
+	e->prsvd	= cr->cam & MMU_CAM_P;
 	e->pgsz		= cr->cam & MMU_CAM_PGSZ_MASK;
 	e->endian	= cr->ram & MMU_RAM_ENDIAN_MASK;
 	e->elsz		= cr->ram & MMU_RAM_ELSZ_MASK;
@@ -296,10 +344,11 @@ static void omap2_cr_to_e(struct cr_regs *cr, struct iotlb_entry *e)
 }
 
 static const struct iommu_functions omap2_iommu_ops = {
-	.version	= IOMMU_ARCH_VERSION,
+	.get_version	= omap2_get_version,
 
 	.enable		= omap2_iommu_enable,
 	.disable	= omap2_iommu_disable,
+	.set_twl	= omap2_iommu_set_twl,
 	.fault_isr	= omap2_iommu_fault_isr,
 
 	.tlb_read_cr	= omap2_tlb_read_cr,
@@ -313,8 +362,6 @@ static const struct iommu_functions omap2_iommu_ops = {
 
 	.get_pte_attr	= omap2_get_pte_attr,
 
-	.save_ctx	= omap2_iommu_save_ctx,
-	.restore_ctx	= omap2_iommu_restore_ctx,
 	.dump_ctx	= omap2_iommu_dump_ctx,
 };
 

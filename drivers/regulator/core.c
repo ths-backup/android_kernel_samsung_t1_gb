@@ -929,8 +929,10 @@ static int set_consumer_device_supply(struct regulator_dev *rdev,
 	struct regulator_map *node;
 	int has_dev;
 
+#if 0
 	if (consumer_dev && consumer_dev_name)
 		return -EINVAL;
+#endif
 
 	if (!consumer_dev_name && consumer_dev)
 		consumer_dev_name = dev_name(consumer_dev);
@@ -1353,10 +1355,18 @@ static int _regulator_disable(struct regulator_dev *rdev)
 {
 	int ret = 0;
 
+	#if 0
 	if (WARN(rdev->use_count <= 0,
 			"unbalanced disables for %s\n",
 			rdev_get_name(rdev)))
 		return -EIO;
+	#else
+	if(rdev->use_count <= 0) {
+		
+	printk("regulator_disable : unbalanced disables for %s\n", rdev_get_name(rdev));
+	return -EIO;
+	}
+	#endif
 
 	/* are we the last user and permitted to disable ? */
 	if (rdev->use_count == 1 &&

@@ -712,12 +712,12 @@ int wm2000_add_controls(struct snd_soc_codec *codec)
 		return -ENODEV;
 	}
 
-	ret = snd_soc_dapm_new_controls(codec, wm2000_dapm_widgets,
+	ret = snd_soc_dapm_new_controls(codec->dapm, wm2000_dapm_widgets,
 					ARRAY_SIZE(wm2000_dapm_widgets));
 	if (ret < 0)
 		return ret;
 
-	ret = snd_soc_dapm_add_routes(codec, audio_map, ARRAY_SIZE(audio_map));
+	ret = snd_soc_dapm_add_routes(codec->dapm, audio_map, ARRAY_SIZE(audio_map));
 	if (ret < 0)
 		return ret;
 
@@ -795,6 +795,8 @@ static int __devinit wm2000_i2c_probe(struct i2c_client *i2c,
 
 	dev_set_drvdata(&i2c->dev, wm2000);
 	wm2000->anc_eng_ena = 1;
+	wm2000->anc_active = 1;
+	wm2000->spk_ena = 1;
 	wm2000->i2c = i2c;
 
 	wm2000_reset(wm2000);

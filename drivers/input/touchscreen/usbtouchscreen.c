@@ -201,7 +201,76 @@ static const struct usb_device_id usbtouch_devices[] = {
 #endif
 
 #ifdef CONFIG_TOUCHSCREEN_USB_GENERAL_TOUCH
-	{USB_DEVICE(0x0dfc, 0x0001), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0501), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0701), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0801), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0901), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0a01), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0b01), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0c01), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0d01), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0e01), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0f01), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x1101), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0502), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0702), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0802), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0902), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0a02), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0b02), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0c02), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0d02), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0e02), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0f02), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x1102), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0503), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0703), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0803), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0903), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0a03), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0b03), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0c03), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0d03), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0e03), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0f03), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x1103), .driver_info = DEVTYPE_IGNORE},
+	{USB_DEVICE_HID_CLASS(0x2087, 0x0a04), .driver_info = DEVTYPE_IGNORE},
+	//{USB_DEVICE(0x0dfc, 0x0001), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0501), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0701), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0801), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0901), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0a01), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0b01), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0c01), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0d01), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0e01), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0f01), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x1101), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0502), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0702), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0802), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0902), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0a02), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0b02), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0c02), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0d02), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0e02), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0f02), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x1102), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0503), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0703), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0803), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0903), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0a03), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0b03), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0c03), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0d03), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0e03), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0f03), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x1103), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0x2087, 0x0a04), .driver_info = DEVTYPE_GENERAL_TOUCH},
+	{USB_DEVICE(0xaace, 0xccdf), .driver_info = DEVTYPE_GENERAL_TOUCH},
 #endif
 
 #ifdef CONFIG_TOUCHSCREEN_USB_GOTOP
@@ -367,7 +436,7 @@ static int mtouch_init(struct usbtouch_usb *usbtouch)
 	    __func__, ret);
 	if (ret < 0)
 		return ret;
-	msleep(150);
+	msleep(1);
 
 	for (i = 0; i < 3; i++) {
 		ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0),
@@ -632,11 +701,9 @@ static int idealtek_read_data(struct usbtouch_usb *dev, unsigned char *pkt)
 #ifdef CONFIG_TOUCHSCREEN_USB_GENERAL_TOUCH
 static int general_touch_read_data(struct usbtouch_usb *dev, unsigned char *pkt)
 {
-	dev->x = (pkt[2] << 8) | pkt[1];
-	dev->y = (pkt[4] << 8) | pkt[3];
-	dev->press = pkt[5] & 0xff;
-	dev->touch = pkt[0] & 0x01;
-
+	dev->x = ((pkt[4] & 0xFF) << 8) | (pkt[3] & 0xFF);
+	dev->y = ((pkt[6] & 0xFF) << 8) | (pkt[5] & 0xFF);
+	dev->touch = pkt[1] & 0x01;
 	return 1;
 }
 #endif
@@ -1050,10 +1117,10 @@ static struct usbtouch_device_info usbtouch_dev_info[] = {
 #ifdef CONFIG_TOUCHSCREEN_USB_GENERAL_TOUCH
 	[DEVTYPE_GENERAL_TOUCH] = {
 		.min_xc		= 0x0,
-		.max_xc		= 0x7fff,
+		.max_xc		= 0x0fff,
 		.min_yc		= 0x0,
-		.max_yc		= 0x7fff,
-		.rept_size	= 7,
+		.max_yc		= 0x0fff,
+		.rept_size	= 14,
 		.read_data	= general_touch_read_data,
 	},
 #endif

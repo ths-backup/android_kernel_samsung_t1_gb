@@ -20,6 +20,7 @@
 #include <linux/i2c.h>
 #include <linux/spi/spi.h>
 #include <linux/usb/musb.h>
+#include <sound/tlv320aic3x.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach-types.h>
@@ -381,15 +382,6 @@ static void n8x0_mmc_callback(void *data, u8 card_mask)
 	omap_mmc_notify_cover_event(mmc_device, index, *openp);
 }
 
-void n8x0_mmc_slot1_cover_handler(void *arg, int closed_state)
-{
-	if (mmc_device == NULL)
-		return;
-
-	slot1_cover_open = !closed_state;
-	omap_mmc_notify_cover_event(mmc_device, 0, closed_state);
-}
-
 static int n8x0_mmc_late_init(struct device *dev)
 {
 	int r, bit, *openp;
@@ -509,7 +501,7 @@ static struct omap_mmc_platform_data mmc1_data = {
 
 static struct omap_mmc_platform_data *mmc_data[OMAP24XX_NR_MMC];
 
-void __init n8x0_mmc_init(void)
+static void __init n8x0_mmc_init(void)
 
 {
 	int err;
@@ -551,18 +543,13 @@ void __init n8x0_mmc_init(void)
 	}
 
 	mmc_data[0] = &mmc1_data;
-	omap2_init_mmc(mmc_data, OMAP24XX_NR_MMC);
+	omap2_init_mmc(mmc_data[0], OMAP24XX_NR_MMC);
 }
 #else
 
 void __init n8x0_mmc_init(void)
 {
 }
-
-void n8x0_mmc_slot1_cover_handler(void *arg, int state)
-{
-}
-
 #endif	/* CONFIG_MMC_OMAP */
 
 #ifdef CONFIG_MENELAUS
@@ -612,10 +599,24 @@ static int n8x0_menelaus_late_init(struct device *dev)
 	return 0;
 }
 
+static struct aic3x_setup_data n810_aic33_setup = {
+	.gpio_func[0] = AIC3X_GPIO1_FUNC_DISABLED,
+	.gpio_func[1] = AIC3X_GPIO2_FUNC_DIGITAL_MIC_INPUT,
+};
+
+static struct aic3x_pdata n810_aic33_data = {
+	.setup = &n810_aic33_setup,
+	.gpio_reset = -1,
+};
+
 static struct i2c_board_info __initdata n8x0_i2c_board_info_1[] = {
 	{
 		I2C_BOARD_INFO("menelaus", 0x72),
 		.irq = INT_24XX_SYS_NIRQ,
+	},
+	{
+		I2C_BOARD_INFO("tlv320aic3x", 0x1b),
+		.platform_data = &n810_aic33_data,
 	},
 };
 
@@ -626,7 +627,7 @@ static struct menelaus_platform_data n8x0_menelaus_platform_data = {
 static void __init n8x0_menelaus_init(void)
 {
 	n8x0_i2c_board_info_1[0].platform_data = &n8x0_menelaus_platform_data;
-	omap_register_i2c_bus(1, 400, n8x0_i2c_board_info_1,
+	omap_register_i2c_bus(1, 400, NULL, n8x0_i2c_board_info_1,
 			      ARRAY_SIZE(n8x0_i2c_board_info_1));
 }
 
@@ -646,7 +647,6 @@ static void __init n8x0_init_irq(void)
 {
 	omap2_init_common_hw(NULL, NULL);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 static void __init n8x0_init_machine(void)

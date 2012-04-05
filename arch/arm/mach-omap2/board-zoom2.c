@@ -31,7 +31,6 @@ static void __init omap_zoom2_init_irq(void)
 	omap2_init_common_hw(mt46h32m32lf6_sdrc_params,
 				 mt46h32m32lf6_sdrc_params);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 /* REVISIT: These audio entries can be removed once MFD code is merged */
@@ -82,6 +81,7 @@ static void __init omap_zoom2_init(void)
 	omap3_mux_init(board_mux, OMAP_PACKAGE_CBB);
 	zoom_peripherals_init();
 	zoom_debugboard_init();
+	zoom_display_init(OMAP_DSS_VENC_TYPE_COMPOSITE);
 }
 
 static void __init omap_zoom2_map_io(void)

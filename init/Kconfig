@@ -250,6 +250,24 @@ config BSD_PROCESS_ACCT
 	  up to the user level program to do useful things with this
 	  information.  This is generally a good idea, so say Y.
 
+config CONTEXT_SWITCH_COUNTER
+	  bool "CPU Profiler"
+	  depends on BSD_PROCESS_ACCT
+	  default n
+	  help
+	  If you say Y here, the context switching information is written
+	  in a new file format that also logs the process IDs of each
+	  process.    | Switching time |  Process ID |
+	  This facility is added by samsung electronics.
+
+config NO_COUNTING_SWAPPER
+	  bool "No counting swapper process's switching"
+	  depends on CONTEXT_SWITCH_COUNTER
+	  default n
+	  help
+	  If you say Y here, the context switching information is written
+	  in a new file format without swapper's switching.
+	  This facility is added by samsung electronics.
 config BSD_PROCESS_ACCT_V3
 	bool "BSD Process Accounting version 3 file format"
 	depends on BSD_PROCESS_ACCT
@@ -786,6 +804,12 @@ config SYSCTL
 config ANON_INODES
 	bool
 
+config PANIC_TIMEOUT
+	int "Default panic timeout"
+	default 0
+	help
+	  Set default panic timeout.
+
 menuconfig EMBEDDED
 	bool "Configure standard kernel features (for small systems)"
 	help
@@ -957,6 +981,15 @@ config SHMEM
 	  to userspace as tmpfs if TMPFS is enabled. Disabling this
 	  option replaces shmem and tmpfs with the much simpler ramfs code,
 	  which may be appropriate on small systems without swap.
+
+config ASHMEM
+	bool "Enable the Anonymous Shared Memory Subsystem"
+	default n
+	depends on SHMEM || TINY_SHMEM
+	help
+	  The ashmem subsystem is a new shared memory allocator, similar to
+	  POSIX SHM but with different behavior and sporting a simpler
+	  file-based API.
 
 config AIO
 	bool "Enable AIO support" if EMBEDDED

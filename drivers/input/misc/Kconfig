@@ -52,6 +52,13 @@ config INPUT_AD714X_SPI
 	  To compile this driver as a module, choose M here: the
 	  module will be called ad714x-spi.
 
+config INPUT_BH1780
+	bool "ROHM BH1780GLI ambient light sensor"
+	depends on I2C && SYSFS
+	help
+	  If you say yes here you get support for the ROHM BH1780GLI
+	  ambient light sensor.
+
 config INPUT_PCSPKR
 	tristate "PC Speaker support"
 	depends on PCSPKR_PLATFORM
@@ -183,6 +190,17 @@ config INPUT_ATI_REMOTE2
 	  To compile this driver as a module, choose M here: the module will be
 	  called ati_remote2.
 
+config INPUT_KEYCHORD
+	tristate "Key chord input driver support"
+	help
+	  Say Y here if you want to enable the key chord driver
+	  accessible at /dev/keychord.  This driver can be used
+	  for receiving notifications when client specified key
+	  combinations are pressed.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called keychord.
+
 config INPUT_KEYSPAN_REMOTE
 	tristate "Keyspan DMR USB remote control (EXPERIMENTAL)"
 	depends on EXPERIMENTAL
@@ -244,6 +262,32 @@ config INPUT_CM109
 	  To compile this driver as a module, choose M here: the module will be
 	  called cm109.
 
+config SAMSUNG_OMAP4_PWRBUTTON
+	tristate "SAMSUNG OMAP4 Power button Driver"
+	depends on ARCH_OMAP4
+	help
+	  Say Y here if you want to enable power key reporting via the
+	  dedicated GPIO of Samsung OMAP4 board.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called SAMSUNG_OMAP4_PWRBUTTON.
+
+config INPUT_GPIO_HOME_KEY
+        boolean "Support GPIO HOME key"
+        depends on SAMSUNG_OMAP4_PWRBUTTON
+        default n
+        help
+          Say Y here if you want to enable HOME key reporting via the
+          GPIO_KEY_HOME.
+
+config INPUT_GPIO_VOLUME_KEY
+        boolean "Support GPIO VOLUME key"
+        depends on SAMSUNG_OMAP4_PWRBUTTON
+        default n
+        help
+          Say Y here if you want to enable VOLUME key reporting via the
+          GPIO_KEY_VOL_UP, GPIO_KEY_VOL_DOWN.
+
 config INPUT_TWL4030_PWRBUTTON
 	tristate "TWL4030 Power button Driver"
 	depends on TWL4030_CORE
@@ -264,6 +308,17 @@ config INPUT_TWL4030_VIBRA
 
 	  To compile this driver as a module, choose M here. The module will
 	  be called twl4030_vibra.
+
+config INPUT_TWL6040_VIBRA
+	tristate "Support for TWL6040 Vibrator"
+	depends on TWL4030_CORE
+	select TWL6040_CODEC
+	select INPUT_FF_MEMLESS
+	help
+	  This option enables support for TWL6040 Vibrator Driver.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called twl6040_vibra.
 
 config INPUT_UINPUT
 	tristate "User level driver support"
@@ -301,6 +356,11 @@ config INPUT_WINBOND_CIR
 
 	  To compile this driver as a module, choose M here: the module will be
 	  called winbond_cir.
+
+config INPUT_GPIO
+	tristate "GPIO driver support"
+	help
+	  Say Y here if you want to support gpio based keys, wheels etc...
 
 config HP_SDC_RTC
 	tristate "HP SDC Real Time Clock"
@@ -390,4 +450,33 @@ config INPUT_PCAP
 	  To compile this driver as a module, choose M here: the
 	  module will be called pcap_keys.
 
+config INPUT_SFH7741
+	tristate "SFH7741 Proximity sensor"
+	help
+	  Say Y here if you want to use proximity sensor sfh7741.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called sfh7741.
+
+config INPUT_CMA3000_I2C
+	bool "VTI CMA3000 Tri-axis accelerometer"
+	depends on I2C && SYSFS
+	help
+	  Say Y here if you want to use VTI CMA3000 Accelerometer
+	  through I2C interface.
+
+config INPUT_HMC5843
+	bool "Honeywell HMC5843 3-Axis Magnetometer"
+	depends on I2C && SYSFS
+	select INPUT_POLLDEV
+	help
+	  Say Y here to add support for the Honeywell HMC 5843 3-Axis
+	  Magnetometer (digital compass).
+
+config INPUT_BMP085
+	bool "BMP085 digital pressure sensor"
+	depends on I2C && SYSFS
+	help
+	  If you say yes here you get support for the Bosch Sensortec
+	  BMP086 digital pressure sensor
 endif

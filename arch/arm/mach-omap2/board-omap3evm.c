@@ -31,6 +31,7 @@
 #include <linux/smsc911x.h>
 
 #include <linux/regulator/machine.h>
+#include <linux/mmc/host.h>
 
 #include <mach/hardware.h>
 #include <asm/mach-types.h>
@@ -370,7 +371,7 @@ static struct regulator_init_data omap3evm_vsim = {
 static struct omap2_hsmmc_info mmc[] = {
 	{
 		.mmc		= 1,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= 63,
 	},
@@ -514,14 +515,11 @@ static struct regulator_init_data omap3_evm_vdac = {
 };
 
 /* VPLL2 for digital video outputs */
-static struct regulator_consumer_supply omap3_evm_vpll2_supply = {
-	.supply		= "vdvi",
-	.dev		= &omap3_evm_lcd_device.dev,
-};
+static struct regulator_consumer_supply omap3_evm_vpll2_supply =
+	REGULATOR_SUPPLY("vdds_dsi", "omapdss");
 
 static struct regulator_init_data omap3_evm_vpll2 = {
 	.constraints = {
-		.name			= "VDVI",
 		.min_uV			= 1800000,
 		.max_uV			= 1800000,
 		.apply_uV		= true,
@@ -566,10 +564,10 @@ static int __init omap3_evm_i2c_init(void)
 	omap3evm_twldata.vmmc1 = &omap3evm_vmmc1;
 	omap3evm_twldata.vsim = &omap3evm_vsim;
 
-	omap_register_i2c_bus(1, 2600, omap3evm_i2c_boardinfo,
+	omap_register_i2c_bus(1, 2600, NULL, omap3evm_i2c_boardinfo,
 			ARRAY_SIZE(omap3evm_i2c_boardinfo));
-	omap_register_i2c_bus(2, 400, NULL, 0);
-	omap_register_i2c_bus(3, 400, NULL, 0);
+	omap_register_i2c_bus(2, 400, NULL, NULL, 0);
+	omap_register_i2c_bus(3, 400, NULL, NULL, 0);
 	return 0;
 }
 
@@ -587,7 +585,7 @@ static int ads7846_get_pendown_state(void)
 	return !gpio_get_value(OMAP3_EVM_TS_GPIO);
 }
 
-struct ads7846_platform_data ads7846_config = {
+static struct ads7846_platform_data ads7846_config = {
 	.x_max			= 0x0fff,
 	.y_max			= 0x0fff,
 	.x_plate_ohms		= 180,
@@ -606,7 +604,7 @@ static struct omap2_mcspi_device_config ads7846_mcspi_config = {
 	.single_channel	= 1,	/* 0: slave, 1: master */
 };
 
-struct spi_board_info omap3evm_spi_board_info[] = {
+static struct spi_board_info omap3evm_spi_board_info[] = {
 	[0] = {
 		.modalias		= "ads7846",
 		.bus_num		= 1,
@@ -627,18 +625,17 @@ static void __init omap3_evm_init_irq(void)
 	omap_board_config_size = ARRAY_SIZE(omap3_evm_config);
 	omap2_init_common_hw(mt46h32m32lf6_sdrc_params, NULL);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 static struct platform_device *omap3_evm_devices[] __initdata = {
 	&omap3_evm_dss_device,
 };
 
-static struct ehci_hcd_omap_platform_data ehci_pdata __initdata = {
+static struct usbhs_omap_platform_data usbhs_pdata __initdata = {
 
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_UNKNOWN,
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+	.port_mode[0] = OMAP_USBHS_PORT_MODE_UNUSED,
+	.port_mode[1] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset  = true,
 	/* PHY reset GPIO will be runtime programmed based on EVM version */
@@ -698,7 +695,7 @@ static void __init omap3_evm_init(void)
 
 		/* setup EHCI phy reset config */
 		omap_mux_init_gpio(21, OMAP_PIN_INPUT_PULLUP);
-		ehci_pdata.reset_gpio_port[1] = 21;
+		usbhs_pdata.reset_gpio_port[1] = 21;
 
 		/* EVM REV >= E can supply 500mA with EXTVBUS programming */
 		musb_board_data.power = 500;
@@ -706,10 +703,10 @@ static void __init omap3_evm_init(void)
 	} else {
 		/* setup EHCI phy reset on MDC */
 		omap_mux_init_gpio(135, OMAP_PIN_OUTPUT);
-		ehci_pdata.reset_gpio_port[1] = 135;
+		usbhs_pdata.reset_gpio_port[1] = 135;
 	}
 	usb_musb_init(&musb_board_data);
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
 	ads7846_dev_init();
 	omap3evm_init_smsc911x();
 	omap3_evm_display_init();

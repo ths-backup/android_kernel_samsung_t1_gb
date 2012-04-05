@@ -31,12 +31,23 @@
 #include <plat/board.h>
 #include <plat/powerdomain.h>
 #include <plat/clockdomain.h>
+#include <plat/voltage.h>
+#include <plat/dmtimer.h>
+
+#include <mach/omap4-common.h>
 
 #include "prm.h"
 #include "cm.h"
 #include "pm.h"
 
 int omap2_pm_debug;
+u32 enable_off_mode;
+u32 sleep_while_idle;
+u32 wakeup_timer_seconds;
+u32 wakeup_timer_milliseconds;
+u32 omap4_device_off_counter = 0;
+int pmd_clks_enable;
+int dpll_cascade_global_state;
 
 #define DUMP_PRM_MOD_REG(mod, reg)    \
 	regs[reg_count].name = #mod "." #reg; \
@@ -162,8 +173,8 @@ void omap2_pm_dump(int mode, int resume, unsigned int us)
 
 static void pm_dbg_regset_store(u32 *ptr);
 
-struct dentry *pm_dbg_dir;
-
+static struct dentry *pm_dbg_dir;
+struct dentry  *pm_dbg_main_dir;
 static int pm_dbg_init_done;
 
 static int __init pm_dbg_init(void);
@@ -174,7 +185,7 @@ enum {
 };
 
 struct pm_module_def {
-	char name[8]; /* Name of the module */
+	char name[16]; /* Name of the module */
 	short type; /* CM or PRM */
 	unsigned short offset;
 	int low; /* First register address on this module */
@@ -217,6 +228,55 @@ static const struct pm_module_def omap3_pm_reg_modules[] = {
 	{ "", 0, 0, 0, 0 },
 };
 
+static const struct pm_module_def omap4_pm_reg_modules[] = {
+	{ "OCP_CM1", MOD_CM, OMAP4430_CM1_OCP_SOCKET_MOD, 0x0, 0x40 },
+	{ "CKGEN_CM1", MOD_CM, OMAP4430_CM1_CKGEN_MOD, 0x0, 0x180 },
+	{ "MPU", MOD_CM, OMAP4430_CM1_MPU_MOD, 0x0, 0x20 },
+	{ "TESLA", MOD_CM, OMAP4430_CM1_TESLA_MOD, 0x0, 0x20 },
+	{ "ABE", MOD_CM, OMAP4430_CM1_ABE_MOD, 0x0, 0x88 },
+	{ "RESTORE", MOD_CM, OMAP4430_CM1_RESTORE_MOD, 0x0, 0x40 },
+
+	{ "OCP_CM2", MOD_CM, OMAP4430_CM2_OCP_SOCKET_MOD, 0x0, 0x40 },
+	{ "CKGEN_CM2", MOD_CM, OMAP4430_CM2_CKGEN_MOD, 0x0, 0xec },
+	{ "ALWAYS_ON", MOD_CM, OMAP4430_CM2_ALWAYS_ON_MOD, 0x0, 0x40 },
+	{ "CORE", MOD_CM, OMAP4430_CM2_CORE_MOD, 0x0, 0x740 },
+	{ "IVAHD", MOD_CM, OMAP4430_CM2_IVAHD_MOD, 0x0, 0x28 },
+	{ "CAM", MOD_CM, OMAP4430_CM2_CAM_MOD, 0x0, 0x28 },
+	{ "DSS", MOD_CM, OMAP4430_CM2_DSS_MOD, 0x0, 0x28 },
+	{ "GFX", MOD_CM, OMAP4430_CM2_GFX_MOD, 0x0, 0x20 },
+	{ "L3INIT", MOD_CM, OMAP4430_CM2_L3INIT_MOD, 0x0, 0xe0 },
+	{ "L4PER", MOD_CM, OMAP4430_CM2_L4PER_MOD, 0x0, 0x1d8 },
+	{ "CEFUSE", MOD_CM, OMAP4430_CM2_CEFUSE_MOD, 0x0, 0x20 },
+	{ "RESTORE", MOD_CM, OMAP4430_CM2_RESTORE_MOD, 0x0, 0x5c },
+
+	{ "EMU_CM", MOD_CM, OMAP4430_PRM_EMU_CM_MOD, 0x0, 0x20 },
+	{ "WKUP_CM", MOD_CM, OMAP4430_PRM_WKUP_CM_MOD, 0x0, 0x88 },
+
+	{ "OCP", MOD_PRM, OMAP4430_PRM_OCP_SOCKET_MOD, 0x0, 0x40 },
+	{ "CKGEN", MOD_PRM, OMAP4430_PRM_CKGEN_MOD, 0x0, 0x10 },
+	{ "MPU", MOD_PRM, OMAP4430_PRM_MPU_MOD, 0x0, 0x24 },
+	{ "TESLA", MOD_PRM, OMAP4430_PRM_TESLA_MOD, 0x0, 0x24 },
+	{ "ABE", MOD_PRM, OMAP4430_PRM_ABE_MOD, 0x0, 0x8c },
+	{ "ALWAYS_ON", MOD_PRM, OMAP4430_PRM_ALWAYS_ON_MOD, 0x24, 0x3c },
+	{ "CORE", MOD_PRM, OMAP4430_PRM_CORE_MOD, 0x0, 0x744 },
+	{ "IVAHD", MOD_PRM, OMAP4430_PRM_IVAHD_MOD, 0x0, 0x2c },
+	{ "CAM", MOD_PRM, OMAP4430_PRM_CAM_MOD, 0x0, 0x2c },
+	{ "DSS", MOD_PRM, OMAP4430_PRM_DSS_MOD, 0x0, 0x2c },
+	{ "GFX", MOD_PRM, OMAP4430_PRM_GFX_MOD, 0x0, 0x24 },
+	{ "L3INIT", MOD_PRM, OMAP4430_PRM_L3INIT_MOD, 0x0, 0xe4 },
+	{ "L4PER", MOD_PRM, OMAP4430_PRM_L4PER_MOD, 0x0, 0x1dc },
+	{ "CEFUSE", MOD_PRM, OMAP4430_PRM_CEFUSE_MOD, 0x0, 0x24 },
+	{ "WKUP", MOD_PRM, OMAP4430_PRM_WKUP_MOD, 0x24, 0x84 },
+	{ "EMU", MOD_PRM, OMAP4430_PRM_EMU_MOD, 0x0, 0x24 },
+	{ "DEVICE", MOD_PRM, OMAP4430_PRM_DEVICE_MOD, 0x0, 0xf8 },
+
+	{ "MPU_OCP", MOD_PRM, OMAP4430_PRCM_MPU_OCP_SOCKET_PRCM_MOD, 0x0, 0x0 },
+	{ "MPU_DEVICE", MOD_PRM, OMAP4430_PRCM_MPU_DEVICE_PRM_MOD, 0x0, 0x4 },
+	{ "MPU_CPU0", MOD_PRM, OMAP4430_PRCM_MPU_CPU0_MOD, 0x0, 0x18 },
+	{ "MPU_CPU1", MOD_PRM, OMAP4430_PRCM_MPU_CPU1_MOD, 0x0, 0x18 },
+	{ "", 0, 0, 0, 0 },
+};
+
 #define PM_DBG_MAX_REG_SETS 4
 
 static void *pm_dbg_reg_set[PM_DBG_MAX_REG_SETS];
@@ -249,6 +309,10 @@ static int pm_dbg_show_regs(struct seq_file *s, void *unused)
 
 	if (reg_set == 0) {
 		store = kmalloc(pm_dbg_get_regset_size(), GFP_KERNEL);
+		if (!store) {
+			WARN_ON(1);
+			return -ENOMEM;
+		}
 		ptr = store;
 		pm_dbg_regset_store(ptr);
 	} else {
@@ -349,6 +413,23 @@ void pm_dbg_update_time(struct powerdomain *pwrdm, int prev)
 	pwrdm->timer = t;
 }
 
+void omap2_pm_wakeup_on_timer(u32 seconds, u32 milliseconds)
+{
+	u32 tick_rate, cycles;
+
+	if (!seconds && !milliseconds)
+		return;
+
+	tick_rate = clk_get_rate(omap_dm_timer_get_fclk(gptimer_wakeup));
+	cycles = tick_rate * seconds + tick_rate * milliseconds / 1000;
+	omap_dm_timer_stop(gptimer_wakeup);
+	omap_dm_timer_set_load_start(gptimer_wakeup, 0, 0xffffffff - cycles);
+
+	pr_info("PM: Resume timer in %u.%03u secs"
+		" (%d ticks at %d ticks/sec.)\n",
+		seconds, milliseconds, cycles, tick_rate);
+}
+
 static int clkdm_dbg_show_counter(struct clockdomain *clkdm, void *user)
 {
 	struct seq_file *s = (struct seq_file *)user;
@@ -422,6 +503,8 @@ static int pwrdm_dbg_show_timer(struct powerdomain *pwrdm, void *user)
 static int pm_dbg_show_counters(struct seq_file *s, void *unused)
 {
 	pwrdm_for_each(pwrdm_dbg_show_counter, s);
+	if (cpu_is_omap44xx())
+		seq_printf(s, "DEVICE-OFF:%d\n", omap4_device_off_counter);
 	clkdm_for_each(clkdm_dbg_show_counter, s);
 
 	return 0;
@@ -494,8 +577,10 @@ int pm_dbg_regset_init(int reg_set)
 
 static int pwrdm_suspend_get(void *data, u64 *val)
 {
-	int ret;
-	ret = omap3_pm_get_suspend_state((struct powerdomain *)data);
+	int ret = -EINVAL;
+
+	if (cpu_is_omap34xx())
+		ret = omap3_pm_get_suspend_state((struct powerdomain *)data);
 	*val = ret;
 
 	if (ret >= 0)
@@ -505,7 +590,10 @@ static int pwrdm_suspend_get(void *data, u64 *val)
 
 static int pwrdm_suspend_set(void *data, u64 val)
 {
-	return omap3_pm_set_suspend_state((struct powerdomain *)data, (int)val);
+	if (cpu_is_omap34xx())
+		return omap3_pm_set_suspend_state(
+			(struct powerdomain *)data, (int)val);
+	return -EINVAL;
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(pwrdm_suspend_fops, pwrdm_suspend_get,
@@ -551,15 +639,145 @@ static int option_set(void *data, u64 val)
 	if (option == &wakeup_timer_milliseconds && val >= 1000)
 		return -EINVAL;
 
-	*option = val;
+	if (cpu_is_omap44xx() && (omap_type() == OMAP2_DEVICE_TYPE_GP))
+		*option = 0;
+	else
+		*option = val;
 
-	if (option == &enable_off_mode)
-		omap3_pm_off_mode_enable(val);
+	if (option == &enable_off_mode) {
+		if (cpu_is_omap34xx())
+			omap3_pm_off_mode_enable(val);
+		else if (cpu_is_omap44xx())
+			omap4_pm_off_mode_enable(val);
+	}
+	if (option == &enable_sr_vp_debug && val)
+		pr_notice("Beware that enabling this option will allow user "
+			"to override the system defined vp and sr parameters "
+			"All the updated parameters will take effect next "
+			"time smartreflex is enabled. Also this option "
+			"disables the automatic vp errorgain and sr errormin "
+			"limit changes as per the voltage. Users will have "
+			"to explicitly write values into the debug fs "
+			"entries corresponding to these if they want to see "
+			"them changing according to the VDD voltage\n");
 
 	return 0;
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(pm_dbg_option_fops, option_get, option_set, "%llu\n");
+
+static int pmd_clks_set(void *data, u64 val)
+{
+	int *option = data;
+
+	if (option != &pmd_clks_enable)
+		return -EINVAL;
+
+	if(cpu_is_omap44xx()) {
+		struct clk *l3_instr_ick, *l3_main_3_ick, *ocp_wp_noc_ick;
+
+		l3_instr_ick = clk_get(NULL, "l3_instr_ick");
+		l3_main_3_ick = clk_get(NULL, "l3_main_3_ick");
+		ocp_wp_noc_ick = clk_get(NULL, "ocp_wp_noc_ick");
+
+		/* enable PMD clocks */
+		if (!*option && val) {
+			clk_enable(l3_instr_ick);
+			clk_enable(l3_main_3_ick);
+			clk_enable(ocp_wp_noc_ick);
+
+			*option = val;
+		/* disable PMD clocks */
+		} else if (*option && !val) {
+			clk_disable(l3_instr_ick);
+			clk_disable(l3_main_3_ick);
+			clk_disable(ocp_wp_noc_ick);
+
+			*option = val;
+		}
+	}
+
+	return 0;
+}
+
+static int pmd_clks_get(void *data, u64 *val)
+{
+	int *option = data;
+
+	if (option != &pmd_clks_enable)
+		return -EINVAL;
+
+	*val = *option;
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(pm_debug_pmd_clks_fops, pmd_clks_get, pmd_clks_set,
+		"%llu\n");
+
+static int __init omap4_pmd_clks_init(void)
+{
+	struct clk *l3_instr_ick, *l3_main_3_ick, *ocp_wp_noc_ick;
+
+	l3_instr_ick = clk_get(NULL, "l3_instr_ick");
+	l3_main_3_ick = clk_get(NULL, "l3_main_3_ick");
+	ocp_wp_noc_ick = clk_get(NULL, "ocp_wp_noc_ick");
+
+#ifdef CONFIG_OMAP4_PMD_CLKS_ENABLE
+	pmd_clks_enable = 1;
+
+	if (!(l3_instr_ick->usecount))
+		clk_enable(l3_instr_ick);
+	if (!(l3_main_3_ick->usecount))
+		clk_enable(l3_main_3_ick);
+	if (!(ocp_wp_noc_ick->usecount))
+		clk_enable(ocp_wp_noc_ick);
+#else
+	pmd_clks_enable = 0;
+
+	if (l3_instr_ick->usecount)
+		clk_disable(l3_instr_ick);
+	if (l3_main_3_ick->usecount)
+		clk_disable(l3_main_3_ick);
+	if (ocp_wp_noc_ick->usecount)
+		clk_disable(ocp_wp_noc_ick);
+#endif
+
+	return 0;
+}
+
+static int dpll_cascading_set(void *data, u64 val)
+{
+	int *option = data;
+
+	if (option != &dpll_cascade_global_state)
+		return -EINVAL;
+
+	if (*option == 0 && val == 1) {
+		*option = val;
+		omap4_dpll_low_power_cascade_enter();
+	} else if (*option == 1 && val == 0) {
+		omap4_dpll_low_power_cascade_exit();
+		*option = val;
+	}
+
+	return 0;
+}
+
+static int dpll_cascading_get(void *data, u64 *val)
+{
+	int *option = data;
+
+	if (option != &dpll_cascade_global_state)
+		return -EINVAL;
+
+	*val = *option;
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(pm_debug_dpll_cascading_fops, dpll_cascading_get,
+		dpll_cascading_set, "%llu\n");
 
 static int __init pm_dbg_init(void)
 {
@@ -572,10 +790,10 @@ static int __init pm_dbg_init(void)
 
 	if (cpu_is_omap34xx())
 		pm_dbg_reg_modules = omap3_pm_reg_modules;
-	else {
+	else if (cpu_is_omap44xx())
+		pm_dbg_reg_modules = omap4_pm_reg_modules;
+	else
 		printk(KERN_ERR "%s: only OMAP3 supported\n", __func__);
-		return -ENODEV;
-	}
 
 	d = debugfs_create_dir("pm_debug", NULL);
 	if (IS_ERR(d))
@@ -603,16 +821,33 @@ static int __init pm_dbg_init(void)
 
 		}
 
-	(void) debugfs_create_file("enable_off_mode", S_IRUGO | S_IWUGO, d,
+	(void) debugfs_create_file("enable_off_mode", 0660, d,
 				   &enable_off_mode, &pm_dbg_option_fops);
-	(void) debugfs_create_file("sleep_while_idle", S_IRUGO | S_IWUGO, d,
+	(void) debugfs_create_file("sleep_while_idle", 0660, d,
 				   &sleep_while_idle, &pm_dbg_option_fops);
-	(void) debugfs_create_file("wakeup_timer_seconds", S_IRUGO | S_IWUGO, d,
+	(void) debugfs_create_file("wakeup_timer_seconds", 0660, d,
 				   &wakeup_timer_seconds, &pm_dbg_option_fops);
+	(void) debugfs_create_file("wakeup_timer_milliseconds",
+			0660, d, &wakeup_timer_milliseconds,
+			&pm_dbg_option_fops);
+	(void) debugfs_create_file("enable_sr_vp_debug",  0660, d,
+				   &enable_sr_vp_debug, &pm_dbg_option_fops);
+
+	if (cpu_is_omap44xx()) {
+		omap4_pmd_clks_init();
+		debugfs_create_file("pmd_clks_enable", 0660, d,
+				&pmd_clks_enable, &pm_debug_pmd_clks_fops);
+
+		debugfs_create_file("dpll_cascade_enable", 0660, d,
+				&dpll_cascade_global_state,
+				&pm_debug_dpll_cascading_fops);
+	}
+
+	pm_dbg_main_dir = d;
 	pm_dbg_init_done = 1;
 
 	return 0;
 }
-arch_initcall(pm_dbg_init);
+postcore_initcall(pm_dbg_init);
 
 #endif

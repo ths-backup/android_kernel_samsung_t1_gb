@@ -90,6 +90,13 @@ static struct powerdomain wkup_omap2_pwrdm = {
 
 #endif
 
+extern struct pwrdm_functions omap2_pwrdm_functions;
+extern struct pwrdm_functions omap4_pwrdm_functions;
+
+int _get_mem_bank_onstate_mask(u8 bank);
+int _get_mem_bank_retst_mask(u8 bank);
+int _get_mem_bank_stst_mask(u8 bank);
+int _get_mem_bank_lastmemst_mask(u8 bank);
 
 /* As powerdomains are added or removed above, this list must also be changed */
 static struct powerdomain *powerdomains_omap[] __initdata = {

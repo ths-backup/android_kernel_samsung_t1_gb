@@ -44,28 +44,32 @@
 
 /* CM_CLKEN_PLL*.EN* bit values - not all are available for every DPLL */
 #define DPLL_LOW_POWER_STOP	0x1
+#define DPLL_MN_BYPASS		0x4
 #define DPLL_LOW_POWER_BYPASS	0x5
 #define DPLL_LOCKED		0x7
 
 /* DPLL Type and DCO Selection Flags */
 #define DPLL_J_TYPE		0x1
-#define DPLL_NO_DCO_SEL		0x2
 
 int omap2_clk_enable(struct clk *clk);
 void omap2_clk_disable(struct clk *clk);
 long omap2_clk_round_rate(struct clk *clk, unsigned long rate);
+long omap2_clk_round_rate_parent(struct clk *clk, struct clk *parent);
 int omap2_clk_set_rate(struct clk *clk, unsigned long rate);
 int omap2_clk_set_parent(struct clk *clk, struct clk *new_parent);
 int omap2_dpll_set_rate_tolerance(struct clk *clk, unsigned int tolerance);
 long omap2_dpll_round_rate(struct clk *clk, unsigned long target_rate);
 unsigned long omap3_dpll_recalc(struct clk *clk);
 unsigned long omap3_clkoutx2_recalc(struct clk *clk);
+unsigned long omap3_clkout_mn_recalc(struct clk *clk);
 void omap3_dpll_allow_idle(struct clk *clk);
 void omap3_dpll_deny_idle(struct clk *clk);
 u32 omap3_dpll_autoidle_read(struct clk *clk);
 int omap3_noncore_dpll_set_rate(struct clk *clk, unsigned long rate);
 int omap3_noncore_dpll_enable(struct clk *clk);
 void omap3_noncore_dpll_disable(struct clk *clk);
+long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate);
+unsigned long omap4_dpll_regm4xen_recalc(struct clk *clk);
 
 #ifdef CONFIG_OMAP_RESET_CLOCKS
 void omap2_clk_disable_unused(struct clk *clk);
@@ -80,9 +84,13 @@ u32 omap2_clksel_round_rate_div(struct clk *clk, unsigned long target_rate,
 				u32 *new_div);
 void omap2_init_clksel_parent(struct clk *clk);
 unsigned long omap2_clksel_recalc(struct clk *clk);
+unsigned long omap2_clksel_speculate(struct clk *clk, unsigned long parent_rate);
 long omap2_clksel_round_rate(struct clk *clk, unsigned long target_rate);
 int omap2_clksel_set_rate(struct clk *clk, unsigned long rate);
 int omap2_clksel_set_parent(struct clk *clk, struct clk *new_parent);
+/* XXX hack for clock notifiers */
+u8 _get_div_and_fieldval(struct clk *src_clk, struct clk *clk,
+		u32 *field_val);
 
 u32 omap2_get_dpll_rate(struct clk *clk);
 void omap2_init_dpll_parent(struct clk *clk);
@@ -130,6 +138,7 @@ extern u8 cpu_mask;
 extern const struct clkops clkops_omap2_dflt_wait;
 extern const struct clkops clkops_dummy;
 extern const struct clkops clkops_omap2_dflt;
+extern const struct clkops clkops_omap4_dflt_wait;
 
 extern struct clk_functions omap2_clk_functions;
 extern struct clk *vclk, *sclk;
@@ -138,13 +147,29 @@ extern const struct clksel_rate gpt_32k_rates[];
 extern const struct clksel_rate gpt_sys_rates[];
 extern const struct clksel_rate gfx_l3_rates[];
 
-#if defined(CONFIG_ARCH_OMAP2) && defined(CONFIG_CPU_FREQ)
+extern unsigned long mpu_timer_rate;
+
+#ifdef CONFIG_CPU_FREQ
+
+#ifdef CONFIG_ARCH_OMAP2
 extern void omap2_clk_init_cpufreq_table(struct cpufreq_frequency_table **table);
 extern void omap2_clk_exit_cpufreq_table(struct cpufreq_frequency_table **table);
 #else
 #define omap2_clk_init_cpufreq_table	0
 #define omap2_clk_exit_cpufreq_table	0
 #endif
+
+#ifdef CONFIG_ARCH_OMAP3
+extern void omap3_clk_init_cpufreq_table
+		(struct cpufreq_frequency_table **table);
+extern void omap3_clk_exit_cpufreq_table
+		(struct cpufreq_frequency_table **table);
+#else
+#define omap3_clk_init_cpufreq_table	0
+#define omap3_clk_exit_cpufreq_table	0
+#endif
+
+#endif /* CONFIG_CPU_FREQ */
 
 extern const struct clkops clkops_omap3_noncore_dpll_ops;
 

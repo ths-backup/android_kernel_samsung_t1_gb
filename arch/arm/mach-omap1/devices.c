@@ -25,8 +25,32 @@
 #include <mach/gpio.h>
 #include <plat/mmc.h>
 #include <plat/omap7xx.h>
+#include <plat/mcbsp.h>
 
 /*-------------------------------------------------------------------------*/
+
+#define OMAP16XX_TIMER_32K_BASE                0xfffbc400
+
+static struct resource omap_32k_resources[] = {
+	{
+		.start          = OMAP16XX_TIMER_32K_BASE,
+		.end            = SZ_4K,
+		.flags          = IORESOURCE_MEM,
+	},
+};
+
+static struct platform_device omap_32k_device = {
+	.name                   = "omap-32k-sync-timer",
+	.id                     = -1,
+	.num_resources          = ARRAY_SIZE(omap_32k_resources),
+	.resource               = omap_32k_resources,
+};
+
+static void omap_init_32k(void)
+{
+	if (cpu_is_omap16xx())
+		(void) platform_device_register(&omap_32k_device);
+};
 
 #if defined(CONFIG_RTC_DRV_OMAP) || defined(CONFIG_RTC_DRV_OMAP_MODULE)
 
@@ -267,6 +291,30 @@ static inline void omap_init_sti(void)
 static inline void omap_init_sti(void) {}
 #endif
 
+#if defined(CONFIG_SND_SOC) || defined(CONFIG_SND_SOC_MODULE)
+
+static struct platform_device omap_pcm = {
+	.name	= "omap-pcm-audio",
+	.id	= -1,
+};
+
+OMAP_MCBSP_PLATFORM_DEVICE(1);
+OMAP_MCBSP_PLATFORM_DEVICE(2);
+OMAP_MCBSP_PLATFORM_DEVICE(3);
+
+static void omap_init_audio(void)
+{
+	platform_device_register(&omap_mcbsp1);
+	platform_device_register(&omap_mcbsp2);
+	if (!cpu_is_omap7xx())
+		platform_device_register(&omap_mcbsp3);
+	platform_device_register(&omap_pcm);
+}
+
+#else
+static inline void omap_init_audio(void) {}
+#endif
+
 /*-------------------------------------------------------------------------*/
 
 /*
@@ -295,10 +343,12 @@ static int __init omap1_init_devices(void)
 	 * in alphabetical order so they're easier to sort through.
 	 */
 
+	omap_init_32k();
 	omap_init_mbox();
 	omap_init_rtc();
 	omap_init_spi100k();
 	omap_init_sti();
+	omap_init_audio();
 
 	return 0;
 }

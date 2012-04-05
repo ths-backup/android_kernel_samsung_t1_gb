@@ -228,6 +228,10 @@ else
 KBUILD_CPPFLAGS += $(patsubst %,-I$(srctree)/%include,$(machdirs) $(platdirs))
 endif
 
+## [[BEGIN>>> OMAP-Samsung Specific Configurations
+-include arch/arm/mach-omap2/samsung.mk
+## OMAP-Samsung Specific Configurations <<<END]]
+
 export	TEXT_OFFSET GZFLAGS MMUEXT
 
 # Do we have FASTFPE?

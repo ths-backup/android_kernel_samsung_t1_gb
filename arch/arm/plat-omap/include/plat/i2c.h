@@ -18,15 +18,25 @@
  * 02110-1301 USA
  *
  */
+#ifndef __ASM__ARCH_OMAP_I2C_H
+#define __ASM__ARCH_OMAP_I2C_H
 
 #include <linux/i2c.h>
 
+struct omap_i2c_bus_board_data {
+	struct hwspinlock *handle;
+	int (*hwspinlock_lock) (struct hwspinlock *handle);
+	int (*hwspinlock_unlock) (struct hwspinlock *handle);
+};
+
 #if defined(CONFIG_I2C_OMAP) || defined(CONFIG_I2C_OMAP_MODULE)
 extern int omap_register_i2c_bus(int bus_id, u32 clkrate,
+				 struct omap_i2c_bus_board_data *pdata,
 				 struct i2c_board_info const *info,
 				 unsigned len);
 #else
 static inline int omap_register_i2c_bus(int bus_id, u32 clkrate,
+				 struct omap_i2c_bus_board_data *pdata,
 				 struct i2c_board_info const *info,
 				 unsigned len)
 {
@@ -34,5 +44,20 @@ static inline int omap_register_i2c_bus(int bus_id, u32 clkrate,
 }
 #endif
 
+/**
+ * i2c_dev_attr - OMAP I2C controller device attributes for omap_hwmod
+ * @fifo_depth: total controller FIFO size (in bytes)
+ * @flags: differences in hardware support capability
+ *
+ * @fifo_depth represents what exists on the hardware, not what is
+ * actually configured at runtime by the device driver.
+ */
+struct omap_i2c_dev_attr {
+	u8	fifo_depth;
+	u8	flags;
+};
+
 void __init omap1_i2c_mux_pins(int bus_id);
 void __init omap2_i2c_mux_pins(int bus_id);
+
+#endif //__ASM__ARCH_OMAP_I2C_H_

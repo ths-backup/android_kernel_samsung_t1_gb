@@ -29,6 +29,7 @@
 #include <linux/input.h>
 #include <linux/input/matrix_keypad.h>
 #include <linux/gpio_keys.h>
+#include <linux/mmc/host.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -230,14 +231,14 @@ static struct platform_device pandora_dss_device = {
 static struct omap2_hsmmc_info omap3pandora_mmc[] = {
 	{
 		.mmc		= 1,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= 126,
 		.ext_clock	= 0,
 	},
 	{
 		.mmc		= 2,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= 127,
 		.ext_clock	= 1,
@@ -245,7 +246,7 @@ static struct omap2_hsmmc_info omap3pandora_mmc[] = {
 	},
 	{
 		.mmc		= 3,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 	},
@@ -468,10 +469,10 @@ static struct i2c_board_info __initdata omap3pandora_i2c3_boardinfo[] = {
 
 static int __init omap3pandora_i2c_init(void)
 {
-	omap_register_i2c_bus(1, 2600, omap3pandora_i2c_boardinfo,
+	omap_register_i2c_bus(1, 2600, NULL, omap3pandora_i2c_boardinfo,
 			ARRAY_SIZE(omap3pandora_i2c_boardinfo));
 	/* i2c2 pins are not connected */
-	omap_register_i2c_bus(3, 100, omap3pandora_i2c3_boardinfo,
+	omap_register_i2c_bus(3, 100, NULL, omap3pandora_i2c3_boardinfo,
 			ARRAY_SIZE(omap3pandora_i2c3_boardinfo));
 	return 0;
 }
@@ -536,7 +537,6 @@ static void __init omap3pandora_init_irq(void)
 	omap2_init_common_hw(mt46h32m32lf6_sdrc_params,
 			     mt46h32m32lf6_sdrc_params);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 static struct platform_device *omap3pandora_devices[] __initdata = {
@@ -545,11 +545,11 @@ static struct platform_device *omap3pandora_devices[] __initdata = {
 	&pandora_dss_device,
 };
 
-static const struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
+static const struct usbhs_omap_platform_data usbhs_pdata __initconst = {
 
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_UNKNOWN,
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[1] = OMAP_USBHS_PORT_MODE_UNUSED,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset  = true,
 	.reset_gpio_port[0]  = 16,
@@ -581,7 +581,7 @@ static void __init omap3pandora_init(void)
 	spi_register_board_info(omap3pandora_spi_board_info,
 			ARRAY_SIZE(omap3pandora_spi_board_info));
 	omap3pandora_ads7846_init();
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
 	pandora_keys_gpio_init();
 	usb_musb_init(&musb_board_data);
 

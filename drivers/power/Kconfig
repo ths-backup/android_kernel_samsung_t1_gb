@@ -89,6 +89,19 @@ config BATTERY_OLPC
 	help
 	  Say Y to enable support for the battery on the OLPC laptop.
 
+config TWL6030_BCI_BATTERY
+	tristate "OMAP TWL6030 BCI Battery driver"
+	depends on TWL4030_CORE && TWL6030_GPADC
+	help
+	  Support for OMAP TWL6030 BCI Battery driver.
+	  This driver can give support for TWL6030 Battery Charge Interface.
+
+config CHARGER_BQ2415x
+	tristate "BQ2415x charger"
+	depends on TWL6030_BCI_BATTERY
+	help
+	  Say Y to enable support for BQ24156 battery charger.
+
 config BATTERY_TOSA
 	tristate "Sharp SL-6000 (tosa) battery"
 	depends on MACH_TOSA && MFD_TC6393XB && TOUCHSCREEN_WM97XX
@@ -141,5 +154,6 @@ config CHARGER_PCF50633
 	depends on MFD_PCF50633
 	help
 	 Say Y to include support for NXP PCF50633 Main Battery Charger.
+
 
 endif # POWER_SUPPLY

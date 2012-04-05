@@ -36,6 +36,8 @@
 
 static const char *handler[]= { "prefetch abort", "data abort", "address exception", "interrupt" };
 
+void *vectors_page;
+
 #ifdef CONFIG_DEBUG_USER
 unsigned int user_debug;
 
@@ -453,7 +455,9 @@ do_cache_op(unsigned long start, unsigned long end, int flags)
 		if (end > vma->vm_end)
 			end = vma->vm_end;
 
-		flush_cache_user_range(vma, start, end);
+		up_read(&mm->mmap_sem);
+		flush_cache_user_range(start, end);
+		return;
 	}
 	up_read(&mm->mmap_sem);
 }
@@ -745,7 +749,11 @@ void __init trap_init(void)
 
 void __init early_trap_init(void)
 {
+#if defined(CONFIG_CPU_USE_DOMAINS)
 	unsigned long vectors = CONFIG_VECTORS_BASE;
+#else
+	unsigned long vectors = (unsigned long)vectors_page;
+#endif
 	extern char __stubs_start[], __stubs_end[];
 	extern char __vectors_start[], __vectors_end[];
 	extern char __kuser_helper_start[], __kuser_helper_end[];
@@ -764,10 +772,10 @@ void __init early_trap_init(void)
 	 * Copy signal return handlers into the vector page, and
 	 * set sigreturn to be a pointer to these.
 	 */
-	memcpy((void *)KERN_SIGRETURN_CODE, sigreturn_codes,
-	       sizeof(sigreturn_codes));
-	memcpy((void *)KERN_RESTART_CODE, syscall_restart_code,
-	       sizeof(syscall_restart_code));
+	memcpy((void *)(vectors + KERN_SIGRETURN_CODE - CONFIG_VECTORS_BASE),
+	       sigreturn_codes, sizeof(sigreturn_codes));
+	memcpy((void *)(vectors + KERN_RESTART_CODE - CONFIG_VECTORS_BASE),
+	       syscall_restart_code, sizeof(syscall_restart_code));
 
 	flush_icache_range(vectors, vectors + PAGE_SIZE);
 	modify_domain(DOMAIN_USER, DOMAIN_CLIENT);

@@ -15,8 +15,11 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/slab.h>
+#include <linux/err.h>
+#include <linux/i2c/twl.h>
 
 #include <mach/hardware.h>
+#include <mach/omap4-common.h>
 #include <asm/mach-types.h>
 #include <asm/mach/map.h>
 
@@ -28,8 +31,13 @@
 #include <mach/gpio.h>
 #include <plat/menelaus.h>
 #include <plat/mcbsp.h>
+#include <plat/mcpdm.h>
 #include <plat/dsp_common.h>
 #include <plat/omap44xx.h>
+#include <plat/omap_hwmod.h>
+#include <plat/omap_device.h>
+#include <plat/omap-pm.h>
+#include <sound/omap-abe-dsp.h>
 
 #if	defined(CONFIG_OMAP_DSP) || defined(CONFIG_OMAP_DSP_MODULE)
 
@@ -194,34 +202,76 @@ void omap_mcbsp_register_board_cfg(struct omap_mcbsp_platform_data *config,
 
 /*-------------------------------------------------------------------------*/
 
-#if defined(CONFIG_SND_OMAP_SOC_MCPDM) || \
-		defined(CONFIG_SND_OMAP_SOC_MCPDM_MODULE)
+#if defined(CONFIG_SND_OMAP_SOC_DMIC) || \
+    defined(CONFIG_SND_OMAP_SOC_DMIC_MODULE)
 
-static struct resource mcpdm_resources[] = {
+static struct omap_device_pm_latency omap_dmic_latency[] = {
 	{
-		.name		= "mcpdm_mem",
-		.start		= OMAP44XX_MCPDM_BASE,
-		.end		= OMAP44XX_MCPDM_BASE + SZ_4K,
-		.flags		= IORESOURCE_MEM,
-	},
-	{
-		.name		= "mcpdm_irq",
-		.start		= OMAP44XX_IRQ_MCPDM,
-		.end		= OMAP44XX_IRQ_MCPDM,
-		.flags		= IORESOURCE_IRQ,
+		.deactivate_func = omap_device_idle_hwmods,
+		.activate_func = omap_device_enable_hwmods,
+		.flags = OMAP_DEVICE_LATENCY_AUTO_ADJUST,
 	},
 };
 
-static struct platform_device omap_mcpdm_device = {
-	.name		= "omap-mcpdm",
-	.id		= -1,
-	.num_resources	= ARRAY_SIZE(mcpdm_resources),
-	.resource	= mcpdm_resources,
+static void omap_init_dmic(void)
+{
+	struct omap_hwmod *oh;
+	struct omap_device *od;
+
+	oh = omap_hwmod_lookup("dmic");
+	if (!oh) {
+		printk(KERN_ERR "Could not look up dmic hw_mod\n");
+		return;
+	}
+
+	od = omap_device_build("omap-dmic-dai", -1, oh, NULL, 0,
+				omap_dmic_latency,
+				ARRAY_SIZE(omap_dmic_latency), 0);
+	if (IS_ERR(od))
+		printk(KERN_ERR "Could not build omap_device for omap-dmic-dai\n");
+}
+#else
+static inline void omap_init_dmic(void) {}
+#endif
+
+/*-------------------------------------------------------------------------*/
+
+#if defined(CONFIG_SND_OMAP_SOC_MCPDM) || defined(CONFIG_SND_OMAP_SOC_MCPDM_MODULE)
+
+static struct omap_device_pm_latency omap_mcpdm_latency[] = {
+	{
+		.deactivate_func = omap_device_idle_hwmods,
+		.activate_func = omap_device_enable_hwmods,
+		.flags = OMAP_DEVICE_LATENCY_AUTO_ADJUST,
+	},
 };
 
 static void omap_init_mcpdm(void)
 {
-	(void) platform_device_register(&omap_mcpdm_device);
+	struct omap_hwmod *oh;
+	struct omap_device *od;
+	struct omap_mcpdm_platform_data *pdata;
+
+	oh = omap_hwmod_lookup("omap-mcpdm-dai");
+	if (!oh)
+		printk(KERN_ERR "Could not look up mcpdm hw_mod\n");
+
+	pdata = kzalloc(sizeof(struct omap_mcpdm_platform_data), GFP_KERNEL);
+	if (!pdata) {
+		printk(KERN_ERR "Could not allocate platform data\n");
+		return;
+	}
+	pdata->device_enable = omap_device_enable;
+	pdata->device_idle = omap_device_idle;
+	pdata->device_shutdown = omap_device_shutdown;
+
+	od = omap_device_build("omap-mcpdm-dai", -1, oh, pdata,
+				sizeof(struct omap_mcpdm_platform_data),
+				omap_mcpdm_latency,
+				ARRAY_SIZE(omap_mcpdm_latency), 0);
+
+	if (od <= 0)
+		printk(KERN_ERR "Could not build omap_device for omap-mcpdm-dai\n");
 }
 #else
 static inline void omap_init_mcpdm(void) {}
@@ -275,6 +325,90 @@ fail:
 	return ret;
 }
 
+#endif
+
+/*-------------------------------------------------------------------------*/
+
+#if defined(CONFIG_SND_OMAP_SOC_ABE_DSP) || \
+	defined(CONFIG_SND_OMAP_SOC_ABE_DSP_MODULE)
+#if 0
+	/* TODO: hwmod is not ready for AESS ABE atm so just use normal pdev */
+
+static struct resource aess_resources[] = {
+	{
+		.start		= L4_ABE_44XX_PHYS,
+		.end		= L4_ABE_44XX_PHYS + SZ_1M,
+		.flags		= IORESOURCE_MEM,
+	},
+	{
+		.start		= OMAP44XX_IRQ_ABE,
+		.flags		= IORESOURCE_IRQ,
+	},
+};
+
+static struct omap4_abe_dsp_pdata aess_pdata = {
+	.device_enable = omap_device_enable,
+	.device_shutdown	= omap_device_shutdown,
+	.device_idle	= omap_device_idle,
+};
+
+static struct platform_device omap_aess_device = {
+	.name		= "omap-aess-audio",
+	.id		= -1,
+	.num_resources	= ARRAY_SIZE(aess_resources),
+	.resource	= aess_resources,
+	.dev = {
+		.platform_data = &aess_pdata,
+	},
+};
+
+static void omap_init_aess(void)
+{
+	(void) platform_device_register(&omap_aess_device);
+}
+
+#else
+static struct omap_device_pm_latency omap_aess_latency[] = {
+	{
+		.deactivate_func = omap_device_idle_hwmods,
+		.activate_func = omap_device_enable_hwmods,
+		.flags = OMAP_DEVICE_LATENCY_AUTO_ADJUST,
+	},
+};
+
+static void omap_init_aess(void)
+{
+	struct omap_hwmod *oh;
+	struct omap_device *od;
+	struct omap4_abe_dsp_pdata *pdata;
+
+	oh = omap_hwmod_lookup("omap-aess-audio");
+	if (!oh) {
+		printk (KERN_ERR "Could not look up aess hw_mod\n");
+		return;
+	}
+
+	pdata = kzalloc(sizeof(struct omap4_abe_dsp_pdata), GFP_KERNEL);
+	if (!pdata) {
+		printk(KERN_ERR "Could not allocate platform data\n");
+		return;
+	}
+
+	pdata->get_context_loss_count = omap_pm_get_dev_context_loss_count;
+
+	od = omap_device_build("omap-aess-audio", -1, oh, pdata,
+				sizeof(struct omap4_abe_dsp_pdata),
+				omap_aess_latency,
+				ARRAY_SIZE(omap_aess_latency), 0);
+
+	kfree(pdata);
+
+	if (IS_ERR(od))
+		printk(KERN_ERR "Could not build omap_device for omap-aess-audio\n");
+}
+#endif
+#else
+static inline void omap_init_aess(void) {}
 #endif
 
 /*-------------------------------------------------------------------------*/
@@ -360,6 +494,8 @@ static inline void omap_init_uwire(void) {}
 
 static struct resource wdt_resources[] = {
 	{
+		.start		= 0xfffeb000,
+		.end		= 0xfffeb07F,
 		.flags		= IORESOURCE_MEM,
 	},
 };
@@ -371,24 +507,39 @@ static struct platform_device omap_wdt_device = {
 	.resource	= wdt_resources,
 };
 
+struct omap_device_pm_latency omap_wdt_latency[] = {
+	[0] = {
+		.deactivate_func = omap_device_idle_hwmods,
+		.activate_func   = omap_device_enable_hwmods,
+		.flags		 = OMAP_DEVICE_LATENCY_AUTO_ADJUST,
+	},
+};
+
+static int omap2_init_wdt(struct omap_hwmod *oh, void *user)
+{
+	int id = -1;
+	struct omap_device *od;
+	char *name = "omap_wdt";
+
+	if (!oh)
+		pr_err("Could not look up wdtimer2_hwmod\n");
+
+	od = omap_device_build(name, id, oh, NULL, 0,
+				omap_wdt_latency,
+				ARRAY_SIZE(omap_wdt_latency), 0);
+	WARN(IS_ERR(od), "Cant build omap_device for %s:%s.\n",
+				name, oh->name);
+	return 0;
+}
+
 static void omap_init_wdt(void)
 {
-	if (cpu_is_omap16xx())
-		wdt_resources[0].start = 0xfffeb000;
-	else if (cpu_is_omap2420())
-		wdt_resources[0].start = 0x48022000; /* WDT2 */
-	else if (cpu_is_omap2430())
-		wdt_resources[0].start = 0x49016000; /* WDT2 */
-	else if (cpu_is_omap343x())
-		wdt_resources[0].start = 0x48314000; /* WDT2 */
-	else if (cpu_is_omap44xx())
-		wdt_resources[0].start = 0x4a314000;
-	else
-		return;
-
-	wdt_resources[0].end = wdt_resources[0].start + 0x4f;
-
-	(void) platform_device_register(&omap_wdt_device);
+	if (cpu_class_is_omap2())
+		omap_hwmod_for_each_by_class("wd_timer", omap2_init_wdt,
+						NULL);
+	else if (cpu_is_omap16xx())
+		(void) platform_device_register(&omap_wdt_device);
+	return;
 }
 #else
 static inline void omap_init_wdt(void) {}
@@ -419,6 +570,8 @@ static int __init omap_init_devices(void)
 	/* please keep these calls, and their implementations above,
 	 * in alphabetical order so they're easier to sort through.
 	 */
+	omap_init_aess();
+	omap_init_dmic();
 	omap_init_dsp();
 	omap_init_kp();
 	omap_init_rng();

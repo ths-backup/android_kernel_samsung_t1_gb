@@ -43,7 +43,6 @@
  *                 using separate functional clock
  *   0x3 disabled: Module is disabled and cannot be accessed
  *
- * TODO: Need to handle module accessible in idle state
  */
 int omap4_cm_wait_module_ready(void __iomem *clkctrl_reg)
 {
@@ -52,10 +51,39 @@ int omap4_cm_wait_module_ready(void __iomem *clkctrl_reg)
 	if (!clkctrl_reg)
 		return 0;
 
-	omap_test_timeout(((__raw_readl(clkctrl_reg) &
-			    OMAP4430_IDLEST_MASK) == 0),
-			  MAX_MODULE_READY_TIME, i);
+	omap_test_timeout((
+		((__raw_readl(clkctrl_reg) & OMAP4430_IDLEST_MASK) == 0) ||
+		 (((__raw_readl(clkctrl_reg) & OMAP4430_IDLEST_MASK) >>
+		  OMAP4430_IDLEST_SHIFT) == 0x2)),
+		MAX_MODULE_READY_TIME, i);
 
 	return (i < MAX_MODULE_READY_TIME) ? 0 : -EBUSY;
 }
+
+/**  
+ * omap4_cm_wait_module_idle - wait for a module to be in 'disabled' state  
+ * @clkctrl_reg: CLKCTRL module address  
+ *  
+ * Wait for the module IDLEST to be disabled.  
+ *  
+ * Module idle state:  
+ *   0x0 func:     Module is fully functional, including OCP  
+ *   0x1 trans:    Module is performing transition: wakeup, or sleep, or sleep  
+ *                 abortion  
+ *   0x2 idle:     Module is in Idle mode (only OCP part). It is functional if  
+ *                 using separate functional clock  
+ *   0x3 disabled: Module is disabled and cannot be accessed  
+ *  
+ */  
+ int omap4_cm_wait_module_idle(void __iomem *clkctrl_reg)  
+ {  
+ 	int i = 0;  
+ 
+	 if (!clkctrl_reg)  
+		return 0;  
+
+	omap_test_timeout((((__raw_readl(clkctrl_reg) & OMAP4430_IDLEST_MASK) >> OMAP4430_IDLEST_SHIFT) == 0x3), MAX_MODULE_READY_TIME, i);  
+ 
+	return (i < MAX_MODULE_READY_TIME) ? 0 : -EBUSY;  
+ }  
 

@@ -4,17 +4,16 @@
 #define	__ASM_ARCH_OMAP_USB_H
 
 #include <linux/usb/musb.h>
+#include <linux/platform_device.h>
 #include <plat/board.h>
 
-#define OMAP3_HS_USB_PORTS	3
-enum ehci_hcd_omap_mode {
-	EHCI_HCD_OMAP_MODE_UNKNOWN,
-	EHCI_HCD_OMAP_MODE_PHY,
-	EHCI_HCD_OMAP_MODE_TLL,
-};
 
-enum ohci_omap3_port_mode {
-	OMAP_OHCI_PORT_MODE_UNUSED,
+#define OMAP3_HS_USB_PORTS	3
+
+enum usbhs_omap3_port_mode {
+	OMAP_USBHS_PORT_MODE_UNUSED,
+	OMAP_EHCI_PORT_MODE_PHY,
+	OMAP_EHCI_PORT_MODE_TLL,
 	OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0,
 	OMAP_OHCI_PORT_MODE_PHY_6PIN_DPDM,
 	OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0,
@@ -24,22 +23,46 @@ enum ohci_omap3_port_mode {
 	OMAP_OHCI_PORT_MODE_TLL_3PIN_DATSE0,
 	OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM,
 	OMAP_OHCI_PORT_MODE_TLL_2PIN_DATSE0,
-	OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM,
+	OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM
 };
 
-struct ehci_hcd_omap_platform_data {
-	enum ehci_hcd_omap_mode		port_mode[OMAP3_HS_USB_PORTS];
-	unsigned			phy_reset:1;
+enum driver_type {
+	OMAP_EHCI,
+	OMAP_OHCI
+};
+
+struct usbhs_omap_platform_data {
+	enum usbhs_omap3_port_mode	port_mode[OMAP3_HS_USB_PORTS];
 
 	/* have to be valid if phy_reset is true and portx is in phy mode */
 	int	reset_gpio_port[OMAP3_HS_USB_PORTS];
-};
-
-struct ohci_hcd_omap_platform_data {
-	enum ohci_omap3_port_mode	port_mode[OMAP3_HS_USB_PORTS];
 
 	/* Set this to true for ES2.x silicon */
 	unsigned			es2_compatibility:1;
+
+	unsigned			phy_reset:1;
+
+	/* Regulators for USB PHYs.
+	 * Each PHY can have a separate regulator.
+	 */
+	struct regulator        *regulator[OMAP3_HS_USB_PORTS];
+};
+
+
+struct usbhs_omap_resource {
+	int			irq;		/* irq allocated */
+	void __iomem		*regs;		/* device memory/io */
+	u64			start;	/* memory/io resource start */
+	u64			len;	/* memory/io resource length */
+};
+
+struct uhhtll_apis {
+	int	(*get_platform_data) (struct usbhs_omap_platform_data *);
+	int	(*get_resource)(enum driver_type, struct usbhs_omap_resource *);
+	int	(*enable) (enum driver_type);
+	int	(*disable) (enum driver_type);
+	int	(*suspend) (enum driver_type);
+	int	(*resume) (enum driver_type);
 };
 
 /*-------------------------------------------------------------------------*/
@@ -71,14 +94,23 @@ struct omap_musb_board_data {
 	unsigned extvbus:1;
 };
 
+enum musb_state {
+	save_context = 1,
+	disable_clk,
+	restore_context,
+	enable_clk,
+};
+
 enum musb_interface    {MUSB_INTERFACE_ULPI, MUSB_INTERFACE_UTMI};
 
 extern void usb_musb_init(struct omap_musb_board_data *board_data);
 
-extern void usb_ehci_init(const struct ehci_hcd_omap_platform_data *pdata);
+extern void usb_uhhtll_init(const struct usbhs_omap_platform_data *pdata);
 
-extern void usb_ohci_init(const struct ohci_hcd_omap_platform_data *pdata);
+extern void usbhs_wakeup(void);
 
+/* For saving and restoring the musb context during off/wakeup*/
+extern void musb_context_save_restore(enum musb_state state);
 #endif
 
 void omap_usb_init(struct omap_usb_config *pdata);

@@ -15,6 +15,7 @@
 #include <linux/mman.h>
 #include <linux/nodemask.h>
 #include <linux/sort.h>
+#include <linux/fs.h>
 
 #include <asm/cputype.h>
 #include <asm/mach-types.h>
@@ -25,6 +26,7 @@
 #include <asm/smp_plat.h>
 #include <asm/tlb.h>
 #include <asm/highmem.h>
+#include <asm/traps.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
@@ -258,6 +260,18 @@ static struct mem_type mem_types[] = {
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE,
 		.domain    = DOMAIN_KERNEL,
 	},
+
+	[MT_MEMORY_SO] = {
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE |
+				PMD_SECT_UNCACHED | PMD_SECT_XN | PMD_SECT_S,
+		.domain    = DOMAIN_KERNEL,
+	},
+
+	[MT_MEMORY_SO_EXE] = {
+		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE |
+				PMD_SECT_UNCACHED | PMD_SECT_S,
+		.domain    = DOMAIN_KERNEL,
+	},
 };
 
 const struct mem_type *get_mem_type(unsigned int type)
@@ -485,6 +499,19 @@ static void __init build_mem_type_table(void)
 			t->prot_sect |= PMD_DOMAIN(t->domain);
 	}
 }
+
+#ifdef CONFIG_ARM_DMA_MEM_BUFFERABLE
+pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
+			      unsigned long size, pgprot_t vma_prot)
+{
+	if (!pfn_valid(pfn))
+		return pgprot_noncached(vma_prot);
+	else if (file->f_flags & O_SYNC)
+		return pgprot_writecombine(vma_prot);
+	return vma_prot;
+}
+EXPORT_SYMBOL(phys_mem_access_prot);
+#endif
 
 #define vectors_base()	(vectors_high() ? 0xffff0000 : 0)
 
@@ -935,12 +962,11 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 {
 	struct map_desc map;
 	unsigned long addr;
-	void *vectors;
 
 	/*
 	 * Allocate the vector page early.
 	 */
-	vectors = alloc_bootmem_low_pages(PAGE_SIZE);
+	vectors_page = alloc_bootmem_low_pages(PAGE_SIZE);
 
 	for (addr = VMALLOC_END; addr; addr += PGDIR_SIZE)
 		pmd_clear(pmd_off_k(addr));
@@ -980,7 +1006,7 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	 * location (0xffff0000).  If we aren't using high-vectors, also
 	 * create a mapping at the low-vectors virtual address.
 	 */
-	map.pfn = __phys_to_pfn(virt_to_phys(vectors));
+	map.pfn = __phys_to_pfn(virt_to_phys(vectors_page));
 	map.virtual = 0xffff0000;
 	map.length = PAGE_SIZE;
 	map.type = MT_HIGH_VECTORS;

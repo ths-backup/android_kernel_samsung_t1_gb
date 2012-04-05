@@ -38,7 +38,12 @@ config ARCH_OMAP4
 	depends on ARCH_OMAP2PLUS
 	select CPU_V7
 	select ARM_GIC
-
+	select ARM_ERRATA_720789
+	select ARM_THUMB
+	select ARM_THUMBEE
+	select DEVTMPFS
+	select UNIX
+	select USB_ARCH_HAS_EHCI
 endchoice
 
 comment "OMAP Feature Selections"
@@ -52,6 +57,71 @@ config OMAP_DEBUG_LEDS
 	bool
 	depends on OMAP_DEBUG_DEVICES
 	default y if LEDS || LEDS_OMAP_DEBUG
+
+config OMAP_SMARTREFLEX
+	bool "SmartReflex support"
+	depends on (ARCH_OMAP3 || ARCH_OMAP4) && PM
+	help
+	  Say Y if you want to enable SmartReflex.
+
+	  SmartReflex can perform continuous dynamic voltage
+	  scaling around the nominal operating point voltage
+	  according to silicon characteristics and operating
+	  conditions. Enabling SmartReflex reduces power
+	  consumption.
+
+	  Please note, that by default SmartReflex is only
+	  initialized. To enable the automatic voltage
+	  compensation for VDD1 and VDD2, user must write 1 to
+	  /debug/pm_debug/Smartreflex/SR<X>/autocomp,
+	  where X is 1 or 2 for OMAP3
+
+config OMAP_SMARTREFLEX_TESTING
+	bool "Smartreflex testing support"
+	depends on OMAP_SMARTREFLEX
+	default n
+	help
+	  Say Y if you want to enable SmartReflex testing with SW hardcoded
+	  NVALUES intead of E-fuse NVALUES set in factory silicon testing.
+
+	  In some devices the E-fuse values have not been set, even though
+	  SmartReflex modules are included. Using these hardcoded values set
+	  in software, one can test the SmartReflex features without E-fuse.
+
+	  WARNING: Enabling this option may cause your device to hang!
+
+config OMAP_SMARTREFLEX_CLASS3
+	bool "Class 3 mode of Smartreflex Implementation"
+	depends on OMAP_SMARTREFLEX && TWL4030_CORE
+	help
+	  Say Y to enable Class 3 implementation of Smartreflex
+
+	  Class 3 implementation of Smartreflex employs continuous hardware
+	  voltage caliberation.
+
+config OMAP_ABB
+	bool "Enable Adaptive Body-Bias"
+	depends on (ARCH_OMAP3 || ARCH_OMAP4)
+	default y
+	help
+	  Say Y to enable Adaptive Body-Bias in the OMAP voltage layer.
+	  ABB is a technique to boost voltage at high OPPs for weak
+	  silicon, and to reduce voltage at low OPPs for strong silicon.
+	  When bypassed the ABB ldo follows VDD_x voltage.
+
+	  Say Y here if unsure.
+
+config OMAP_ABB_DEFAULT_IVA_FBB
+	bool "Enable Forward Body-Bias on VDD_IVA by default"
+	depends on ARCH_OMAP4 && OMAP_ABB
+	default n
+	help
+	  Say Y if you want enable FBB for VDD_IVA by default at
+	  boot-time.  This value can still be modified dynamically
+	  through the voltage directory exported through debugfs
+	  (debugfs_mount/pm_debug/voltage/vdd_iva/fbb_enable).
+
+	  Say N if you are unsure.
 
 config OMAP_RESET_CLOCKS
 	bool "Reset unused clocks during boot"
@@ -106,8 +176,19 @@ config OMAP_MBOX_FWK
 	  Say Y here if you want to use OMAP Mailbox framework support for
 	  DSP, IVA1.0 and IVA2 in OMAP1/2/3.
 
+config OMAP_REMOTE_PROC
+        bool "Remote Processor framework support"
+        depends on ARCH_OMAP
+        help
+          Say Y here if you want to use OMAP Remote Processor framework
+          support for DSP, IVA, Tesla and Ducati (OMAP2/3/4).
+
 config OMAP_IOMMU
 	tristate
+
+config OMAP_USER_DMM
+	tristate
+	select GENERIC_ALLOCATOR
 
 config OMAP_IOMMU_DEBUG
        tristate "Export OMAP IOMMU internals in DebugFS"
@@ -173,6 +254,13 @@ config OMAP_DM_TIMER
 	help
 	 Select this option if you want to use OMAP Dual-Mode timers.
 
+config OMAP_DM_TIMER_PWM
+	bool "PWM device support"
+	select HAVE_PWM
+	help
+	  Support for exporting the PWM timer blocks via the pwm device
+	  system.
+
 config OMAP_SERIAL_WAKE
 	bool "Enable wake-up events for serial ports"
 	depends on ARCH_OMAP1 && OMAP_MUX
@@ -185,7 +273,7 @@ config OMAP_SERIAL_WAKE
 choice
 	prompt "OMAP PM layer selection"
 	depends on ARCH_OMAP
-	default OMAP_PM_NOOP
+	default OMAP_PM
 
 config OMAP_PM_NONE
 	bool "No PM layer"
@@ -193,7 +281,19 @@ config OMAP_PM_NONE
 config OMAP_PM_NOOP
 	bool "No-op/debug PM layer"
 
+config OMAP_PM
+	depends on PM
+	bool "OMAP PM layer implementation"
 endchoice
+
+config OMAP_HDMI_AUDIO_WA
+	bool "Enable HDMI audio workaround"
+	depends on SYSLINK_PROC
+	default y
+	help
+	  Enable HDMI audio workaround for OMAP ES2.0, ES2.1 and
+	  ES2.2 revisions. This allows to send ACR packets at
+	  the rate described in HDMI 1.3a.
 
 endmenu
 

@@ -26,6 +26,7 @@
 
 #include <linux/regulator/machine.h>
 #include <linux/i2c/twl.h>
+#include <linux/mmc/host.h>
 
 #include <mach/hardware.h>
 #include <asm/mach-types.h>
@@ -275,7 +276,7 @@ static struct regulator_init_data omap3stalker_vsim = {
 static struct omap2_hsmmc_info mmc[] = {
 	{
 	 .mmc		= 1,
-	 .wires		= 4,
+	 .caps		= MMC_CAP_4_BIT_DATA,
 	 .gpio_cd	= -EINVAL,
 	 .gpio_wp	= 23,
 	 },
@@ -523,10 +524,10 @@ static int __init omap3_stalker_i2c_init(void)
 	omap3stalker_twldata.vmmc1 = &omap3stalker_vmmc1;
 	omap3stalker_twldata.vsim = &omap3stalker_vsim;
 
-	omap_register_i2c_bus(1, 2600, omap3stalker_i2c_boardinfo,
+	omap_register_i2c_bus(1, 2600, NULL, omap3stalker_i2c_boardinfo,
 			      ARRAY_SIZE(omap3stalker_i2c_boardinfo));
-	omap_register_i2c_bus(2, 400, NULL, 0);
-	omap_register_i2c_bus(3, 400, omap3stalker_i2c_boardinfo3,
+	omap_register_i2c_bus(2, 400, NULL, NULL, 0);
+	omap_register_i2c_bus(3, 400, NULL, omap3stalker_i2c_boardinfo3,
 			      ARRAY_SIZE(omap3stalker_i2c_boardinfo3));
 	return 0;
 }
@@ -564,7 +565,7 @@ static struct omap2_mcspi_device_config ads7846_mcspi_config = {
 	.single_channel		= 1,	/* 0: slave, 1: master */
 };
 
-struct spi_board_info omap3stalker_spi_board_info[] = {
+static struct spi_board_info omap3stalker_spi_board_info[] = {
 	[0] = {
 	       .modalias	= "ads7846",
 	       .bus_num		= 1,
@@ -588,7 +589,6 @@ static void __init omap3_stalker_init_irq(void)
 #ifdef CONFIG_OMAP_32K_TIMER
 	omap2_gp_clockevent_set_gptimer(12);
 #endif
-	omap_gpio_init();
 }
 
 static struct platform_device *omap3_stalker_devices[] __initdata = {
@@ -596,10 +596,10 @@ static struct platform_device *omap3_stalker_devices[] __initdata = {
 	&keys_gpio,
 };
 
-static struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_UNKNOWN,
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+static struct usbhs_omap_platform_data usbhs_pdata __initconst = {
+	.port_mode[0] = OMAP_USBHS_PORT_MODE_UNUSED,
+	.port_mode[1] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset = true,
 	.reset_gpio_port[0] = -EINVAL,
@@ -639,7 +639,7 @@ static void __init omap3_stalker_init(void)
 
 	omap_serial_init();
 	usb_musb_init(&musb_board_data);
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
 	ads7846_dev_init();
 
 	omap_mux_init_gpio(21, OMAP_PIN_OUTPUT);

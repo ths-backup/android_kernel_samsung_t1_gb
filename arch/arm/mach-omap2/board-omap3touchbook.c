@@ -27,6 +27,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/nand.h>
+#include <linux/mmc/host.h>
 
 #include <plat/mcspi.h>
 #include <linux/spi/spi.h>
@@ -64,7 +65,7 @@
 #define TB_BL_PWM_TIMER		9
 #define TB_KILL_POWER_GPIO	168
 
-unsigned long touchbook_revision;
+static unsigned long touchbook_revision;
 
 static struct mtd_partition omap3touchbook_nand_partitions[] = {
 	/* All the partition sizes are listed in terms of NAND block size */
@@ -125,7 +126,7 @@ static struct platform_device omap3touchbook_nand_device = {
 static struct omap2_hsmmc_info mmc[] = {
 	{
 		.mmc		= 1,
-		.wires		= 8,
+		.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
 		.gpio_wp	= 29,
 	},
 	{}	/* Terminator */
@@ -309,11 +310,11 @@ static struct i2c_board_info __initdata touchBook_i2c_boardinfo[] = {
 static int __init omap3_touchbook_i2c_init(void)
 {
 	/* Standard TouchBook bus */
-	omap_register_i2c_bus(1, 2600, touchbook_i2c_boardinfo,
+	omap_register_i2c_bus(1, 2600, NULL, touchbook_i2c_boardinfo,
 			ARRAY_SIZE(touchbook_i2c_boardinfo));
 
 	/* Additional TouchBook bus */
-	omap_register_i2c_bus(3, 100, touchBook_i2c_boardinfo,
+	omap_register_i2c_bus(3, 100, NULL, touchBook_i2c_boardinfo,
 			ARRAY_SIZE(touchBook_i2c_boardinfo));
 
 	return 0;
@@ -444,7 +445,6 @@ static void __init omap3_touchbook_init_irq(void)
 #ifdef CONFIG_OMAP_32K_TIMER
 	omap2_gp_clockevent_set_gptimer(12);
 #endif
-	omap_gpio_init();
 }
 
 static struct platform_device *omap3_touchbook_devices[] __initdata = {
@@ -492,11 +492,11 @@ static void __init omap3touchbook_flash_init(void)
 	}
 }
 
-static const struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
+static const struct usbhs_omap_platform_data usbhs_pdata __initconst = {
 
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[1] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset  = true,
 	.reset_gpio_port[0]  = -EINVAL,
@@ -551,7 +551,7 @@ static void __init omap3_touchbook_init(void)
 				ARRAY_SIZE(omap3_ads7846_spi_board_info));
 	omap3_ads7846_init();
 	usb_musb_init(&musb_board_data);
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
 	omap3touchbook_flash_init();
 
 	/* Ensure SDRC pins are mux'd for self-refresh */

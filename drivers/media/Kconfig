@@ -5,6 +5,7 @@
 menuconfig MEDIA_SUPPORT
 	tristate "Multimedia support"
 	depends on HAS_IOMEM
+	default y
 	help
 	  If you want to use Video for Linux, DVB for Linux, or DAB adapters,
 	  enable this option and other options below.
@@ -142,5 +143,9 @@ config USB_DABUSB
 	  To compile this driver as a module, choose M here: the
 	  module will be called dabusb.
 endif # DAB
+
+source "drivers/media/video/dmm/Kconfig"
+
+source "drivers/media/video/tiler/Kconfig"
 
 endif # MEDIA_SUPPORT

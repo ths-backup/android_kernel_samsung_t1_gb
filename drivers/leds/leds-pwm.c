@@ -51,6 +51,7 @@ static int led_pwm_probe(struct platform_device *pdev)
 {
 	struct led_pwm_platform_data *pdata = pdev->dev.platform_data;
 	struct led_pwm *cur_led;
+	struct led_pwm current_led={"lcd-backlight", NULL, 190, 1, 255, 85};
 	struct led_pwm_data *leds_data, *led_dat;
 	int i, ret = 0;
 
@@ -63,7 +64,11 @@ static int led_pwm_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	for (i = 0; i < pdata->num_leds; i++) {
+#if 1
+		cur_led = &current_led;
+#else
 		cur_led = &pdata->leds[i];
+#endif
 		led_dat = &leds_data[i];
 
 		led_dat->pwm = pwm_request(cur_led->pwm_id,

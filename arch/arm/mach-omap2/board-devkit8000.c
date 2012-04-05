@@ -28,6 +28,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/nand.h>
+#include <linux/mmc/host.h>
 
 #include <linux/regulator/machine.h>
 #include <linux/i2c/twl.h>
@@ -121,7 +122,7 @@ static struct platform_device devkit8000_nand_device = {
 static struct omap2_hsmmc_info mmc[] = {
 	{
 		.mmc		= 1,
-		.wires		= 8,
+		.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
 		.gpio_wp	= 29,
 	},
 	{}	/* Terminator */
@@ -391,11 +392,11 @@ static struct i2c_board_info __initdata devkit8000_i2c_boardinfo[] = {
 
 static int __init devkit8000_i2c_init(void)
 {
-	omap_register_i2c_bus(1, 2600, devkit8000_i2c_boardinfo,
+	omap_register_i2c_bus(1, 2600, NULL, devkit8000_i2c_boardinfo,
 			ARRAY_SIZE(devkit8000_i2c_boardinfo));
 	/* Bus 3 is attached to the DVI port where devices like the pico DLP
 	 * projector don't work reliably with 400kHz */
-	omap_register_i2c_bus(3, 400, NULL, 0);
+	omap_register_i2c_bus(3, 400, NULL, NULL, 0);
 	return 0;
 }
 
@@ -472,7 +473,6 @@ static void __init devkit8000_init_irq(void)
 #ifdef CONFIG_OMAP_32K_TIMER
 	omap2_gp_clockevent_set_gptimer(12);
 #endif
-	omap_gpio_init();
 }
 
 static void __init devkit8000_ads7846_init(void)
@@ -621,11 +621,11 @@ static struct omap_musb_board_data musb_board_data = {
 	.power			= 100,
 };
 
-static const struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
+static const struct usbhs_omap_platform_data usbhs_pdata __initconst = {
 
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_UNKNOWN,
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[1] = OMAP_USBHS_PORT_MODE_UNUSED,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset  = true,
 	.reset_gpio_port[0]  = -EINVAL,
@@ -806,7 +806,7 @@ static void __init devkit8000_init(void)
 	devkit8000_ads7846_init();
 
 	usb_musb_init(&musb_board_data);
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
 	devkit8000_flash_init();
 
 	/* Ensure SDRC pins are mux'd for self-refresh */

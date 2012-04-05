@@ -26,27 +26,23 @@
 
 #include <plat/powerdomain.h>
 
-struct omap_opp *dsp_opps;
-struct omap_opp *mpu_opps;
-struct omap_opp *l3_opps;
-
 /*
  * Device-driver-originated constraints (via board-*.c files)
  */
 
-void omap_pm_set_max_mpu_wakeup_lat(struct device *dev, long t)
+int omap_pm_set_max_mpu_wakeup_lat(struct pm_qos_request_list **pmqos_req,
+			long t)
 {
-	if (!dev || t < -1) {
-		WARN_ON(1);
-		return;
+	if (!pmqos_req || t < -1) {
+		WARN(1, "OMAP PM: %s: invalid parameter(s)", __func__);
+		return -EINVAL;
 	};
 
 	if (t == -1)
-		pr_debug("OMAP PM: remove max MPU wakeup latency constraint: "
-			 "dev %s\n", dev_name(dev));
+		pr_debug("OMAP PM: remove max MPU wakeup latency constraint\n");
 	else
-		pr_debug("OMAP PM: add max MPU wakeup latency constraint: "
-			 "dev %s, t = %ld usec\n", dev_name(dev), t);
+		pr_debug("OMAP PM: add max MPU wakeup latency constraint:"
+			"t = %ld usec\n", t);
 
 	/*
 	 * For current Linux, this needs to map the MPU to a
@@ -58,14 +54,16 @@ void omap_pm_set_max_mpu_wakeup_lat(struct device *dev, long t)
 	 *
 	 * TI CDP code can call constraint_set here.
 	 */
+
+	return 0;
 }
 
-void omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, unsigned long r)
+int omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, long r)
 {
 	if (!dev || (agent_id != OCP_INITIATOR_AGENT &&
 	    agent_id != OCP_TARGET_AGENT)) {
-		WARN_ON(1);
-		return;
+		WARN(1, "OMAP PM: %s: invalid parameter(s)", __func__);
+		return -EINVAL;
 	};
 
 	if (r == 0)
@@ -83,13 +81,16 @@ void omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, unsigned long r)
 	 *
 	 * TI CDP code can call constraint_set here on the VDD2 OPP.
 	 */
+
+	return 0;
 }
 
-void omap_pm_set_max_dev_wakeup_lat(struct device *dev, long t)
+int omap_pm_set_max_dev_wakeup_lat(struct device *req_dev, struct device *dev,
+				   long t)
 {
-	if (!dev || t < -1) {
-		WARN_ON(1);
-		return;
+	if (!req_dev || !dev || t < -1) {
+		WARN(1, "OMAP PM: %s: invalid parameter(s)", __func__);
+		return -EINVAL;
 	};
 
 	if (t == -1)
@@ -111,21 +112,22 @@ void omap_pm_set_max_dev_wakeup_lat(struct device *dev, long t)
 	 *
 	 * TI CDP code can call constraint_set here.
 	 */
+
+	return 0;
 }
 
-void omap_pm_set_max_sdma_lat(struct device *dev, long t)
+int omap_pm_set_max_sdma_lat(struct pm_qos_request_list **qos_request, long t)
 {
-	if (!dev || t < -1) {
-		WARN_ON(1);
-		return;
+	if (!qos_request || t < -1) {
+		WARN(1, "OMAP PM: %s: invalid parameter(s)", __func__);
+		return -EINVAL;
 	};
 
 	if (t == -1)
-		pr_debug("OMAP PM: remove max DMA latency constraint: "
-			 "dev %s\n", dev_name(dev));
+		pr_debug("OMAP PM: remove max DMA latency constraint:\n");
 	else
-		pr_debug("OMAP PM: add max DMA latency constraint: "
-			 "dev %s, t = %ld usec\n", dev_name(dev), t);
+		pr_debug("OMAP PM: add max DMA latency constraint:"
+			"t = %ld usec\n", t);
 
 	/*
 	 * For current Linux PM QOS params, this code should scan the
@@ -139,8 +141,36 @@ void omap_pm_set_max_sdma_lat(struct device *dev, long t)
 	 * TI CDP code can call constraint_set here.
 	 */
 
+	return 0;
 }
 
+int omap_pm_set_min_clk_rate(struct device *dev, struct clk *c, long r)
+{
+	if (!dev || !c || r < 0) {
+		WARN(1, "OMAP PM: %s: invalid parameter(s)", __func__);
+		return -EINVAL;
+	}
+
+	if (r == 0)
+		pr_debug("OMAP PM: remove min clk rate constraint: "
+			 "dev %s\n", dev_name(dev));
+	else
+		pr_debug("OMAP PM: add min clk rate constraint: "
+			 "dev %s, rate = %ld Hz\n", dev_name(dev), r);
+
+	/*
+	 * Code in a real implementation should keep track of these
+	 * constraints on the clock, and determine the highest minimum
+	 * clock rate.  It should iterate over each OPP and determine
+	 * whether the OPP will result in a clock rate that would
+	 * satisfy this constraint (and any other PM constraint in effect
+	 * at that time).  Once it finds the lowest-voltage OPP that
+	 * meets those conditions, it should switch to it, or return
+	 * an error if the code is not capable of doing so.
+	 */
+
+	return 0;
+}
 
 /*
  * DSP Bridge-specific constraints
@@ -273,13 +303,8 @@ int omap_pm_get_dev_context_loss_count(struct device *dev)
 
 
 /* Should be called before clk framework init */
-int __init omap_pm_if_early_init(struct omap_opp *mpu_opp_table,
-				 struct omap_opp *dsp_opp_table,
-				 struct omap_opp *l3_opp_table)
+int __init omap_pm_if_early_init()
 {
-	mpu_opps = mpu_opp_table;
-	dsp_opps = dsp_opp_table;
-	l3_opps = l3_opp_table;
 	return 0;
 }
 

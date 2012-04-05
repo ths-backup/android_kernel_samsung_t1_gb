@@ -279,7 +279,6 @@ out_release:
 int __ref cpu_down(unsigned int cpu)
 {
 	int err;
-
 	cpu_maps_update_begin();
 
 	if (cpu_hotplug_disabled) {
@@ -342,7 +341,7 @@ int __cpuinit cpu_up(unsigned int cpu)
 	int nid;
 	pg_data_t	*pgdat;
 #endif
-
+	printk(KERN_ERR "cpu_up ");
 	if (!cpu_possible(cpu)) {
 		printk(KERN_ERR "can't online cpu %d because it is not "
 			"configured as may-hotadd at boot time\n", cpu);

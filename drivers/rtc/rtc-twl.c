@@ -162,6 +162,19 @@ static int twl_rtc_write_u8(u8 data, u8 reg)
 	return ret;
 }
 
+#ifdef CONFIG_ARCH_OMAP4
+static int twl_rtc_read(u8 *value, u8 reg, unsigned num_bytes)
+{
+	int ret = 0, i = 0;
+
+	for (i = 0; i < num_bytes; i++)
+		if (twl_rtc_read_u8(value + i, (reg + i)))
+			return ret;
+
+	return ret;
+}
+#endif
+
 /*
  * Cache the value for timer/alarm interrupts register; this is
  * only changed by callers holding rtc ops lock (or resume).
@@ -205,6 +218,7 @@ static int twl_rtc_alarm_irq_enable(struct device *dev, unsigned enabled)
 {
 	int ret;
 
+	printk("%s, enabled = %d\n", __func__, enabled);
 	if (enabled)
 		ret = set_rtc_irq_bit(BIT_RTC_INTERRUPTS_REG_IT_ALARM_M);
 	else
@@ -216,7 +230,8 @@ static int twl_rtc_alarm_irq_enable(struct device *dev, unsigned enabled)
 static int twl_rtc_update_irq_enable(struct device *dev, unsigned enabled)
 {
 	int ret;
-
+	
+	printk("%s, enabled = %d\n", __func__, enabled);
 	if (enabled)
 		ret = set_rtc_irq_bit(BIT_RTC_INTERRUPTS_REG_IT_TIMER_M);
 	else
@@ -250,9 +265,12 @@ static int twl_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	if (ret < 0)
 		return ret;
 
+#ifndef CONFIG_ARCH_OMAP4
 	ret = twl_i2c_read(TWL_MODULE_RTC, rtc_data,
 			(rtc_reg_map[REG_SECONDS_REG]), ALL_TIME_REGS);
-
+#else
+	ret = twl_rtc_read(rtc_data, REG_SECONDS_REG, ALL_TIME_REGS);
+#endif
 	if (ret < 0) {
 		dev_err(dev, "rtc_read_time error %d\n", ret);
 		return ret;
@@ -264,7 +282,10 @@ static int twl_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	tm->tm_mday = bcd2bin(rtc_data[3]);
 	tm->tm_mon = bcd2bin(rtc_data[4]) - 1;
 	tm->tm_year = bcd2bin(rtc_data[5]) + 100;
-
+	/*
+	printk("%s, %d/%d/%d %d:%d:%d\n", __func__, tm->tm_year-100, tm->tm_mon+1, 
+		tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
+	*/
 	return ret;
 }
 
@@ -281,6 +302,8 @@ static int twl_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	rtc_data[5] = bin2bcd(tm->tm_mon + 1);
 	rtc_data[6] = bin2bcd(tm->tm_year - 100);
 
+	printk("%s, %d/%d/%d %d:%d:%d\n", __func__, tm->tm_year-100, tm->tm_mon+1, 
+		tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
 	/* Stop RTC while updating the TC registers */
 	ret = twl_rtc_read_u8(&save_control, REG_RTC_CTRL_REG);
 	if (ret < 0)
@@ -314,9 +337,12 @@ static int twl_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alm)
 {
 	unsigned char rtc_data[ALL_TIME_REGS + 1];
 	int ret;
-
+#ifndef CONFIG_ARCH_OMAP4
 	ret = twl_i2c_read(TWL_MODULE_RTC, rtc_data,
 			(rtc_reg_map[REG_ALARM_SECONDS_REG]), ALL_TIME_REGS);
+#else
+	ret = twl_rtc_read(rtc_data, REG_ALARM_SECONDS_REG, ALL_TIME_REGS);
+#endif
 	if (ret < 0) {
 		dev_err(dev, "rtc_read_alarm error %d\n", ret);
 		return ret;
@@ -329,6 +355,9 @@ static int twl_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alm)
 	alm->time.tm_mday = bcd2bin(rtc_data[3]);
 	alm->time.tm_mon = bcd2bin(rtc_data[4]) - 1;
 	alm->time.tm_year = bcd2bin(rtc_data[5]) + 100;
+
+	printk("%s, %d/%d/%d %d:%d:%d\n", __func__, alm->time.tm_year-100, alm->time.tm_mon+1, 
+		alm->time.tm_mday, alm->time.tm_hour, alm->time.tm_min, alm->time.tm_sec);
 
 	/* report cached alarm enable state */
 	if (rtc_irq_bits & BIT_RTC_INTERRUPTS_REG_IT_ALARM_M)
@@ -352,6 +381,10 @@ static int twl_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
 	alarm_data[4] = bin2bcd(alm->time.tm_mday);
 	alarm_data[5] = bin2bcd(alm->time.tm_mon + 1);
 	alarm_data[6] = bin2bcd(alm->time.tm_year - 100);
+
+
+	printk("%s, %d/%d/%d %d:%d:%d\n", __func__, alm->time.tm_year-100, alm->time.tm_mon+1, 
+		alm->time.tm_mday, alm->time.tm_hour, alm->time.tm_min, alm->time.tm_sec);
 
 	/* update all the alarm registers in one shot */
 	ret = twl_i2c_write(TWL_MODULE_RTC, alarm_data,
@@ -460,6 +493,11 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, rtc);
 
+	/* backup battery charge is enabled. 2.6v
+	twl_i2c_write_u8(TWL6030_MODULE_ID0, (0x1 << 4) | (0x1 << 3) | (0x2 << 1), 0xE6);
+	twl_i2c_read_u8(TWL6030_MODULE_ID0, &rd_reg, 0xE6);
+	printk("twl_rtc_probe BBSPOR_CFG = %x\n", rd_reg);*/
+
 	ret = twl_rtc_read_u8(&rd_reg, REG_RTC_STATUS_REG);
 	if (ret < 0)
 		goto out1;
@@ -475,7 +513,7 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 	if (ret < 0)
 		goto out1;
 
-	ret = request_irq(irq, twl_rtc_interrupt,
+	ret = request_threaded_irq(irq, NULL, twl_rtc_interrupt,
 				IRQF_TRIGGER_RISING,
 				dev_name(&rtc->dev), rtc);
 	if (ret < 0) {
@@ -507,6 +545,15 @@ static int __devinit twl_rtc_probe(struct platform_device *pdev)
 	ret = twl_rtc_read_u8(&rtc_irq_bits, REG_RTC_INTERRUPTS_REG);
 	if (ret < 0)
 		goto out2;
+
+
+	{
+		struct rtc_time tm;
+		twl_rtc_read_time(&pdev->dev, &tm);
+		
+		printk("%s, %d/%d/%d %d:%d:%d\n", __func__, tm.tm_year-100, tm.tm_mon+1, 
+			tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	}
 
 	return ret;
 

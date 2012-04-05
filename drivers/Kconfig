@@ -14,6 +14,8 @@ source "drivers/pnp/Kconfig"
 
 source "drivers/block/Kconfig"
 
+source "drivers/sensors/Kconfig"
+
 # misc before ide - BLK_DEV_SGIIOC4 depends on SGI_IOC4
 
 source "drivers/misc/Kconfig"
@@ -88,6 +90,8 @@ source "drivers/memstick/Kconfig"
 
 source "drivers/leds/Kconfig"
 
+source "drivers/switch/Kconfig"
+
 source "drivers/accessibility/Kconfig"
 
 source "drivers/infiniband/Kconfig"
@@ -111,4 +115,11 @@ source "drivers/xen/Kconfig"
 source "drivers/staging/Kconfig"
 
 source "drivers/platform/Kconfig"
+
+source "drivers/dsp/syslink/Kconfig"
+
+source "drivers/haptic/Kconfig"
+
+source "drivers/phone_svn/Kconfig"
+
 endmenu

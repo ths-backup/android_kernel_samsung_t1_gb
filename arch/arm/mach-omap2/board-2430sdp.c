@@ -19,6 +19,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/physmap.h>
+#include <linux/mmc/host.h>
 #include <linux/delay.h>
 #include <linux/i2c/twl.h>
 #include <linux/err.h>
@@ -148,7 +149,6 @@ static void __init omap_2430sdp_init_irq(void)
 	omap_board_config_size = ARRAY_SIZE(sdp2430_config);
 	omap2_init_common_hw(NULL, NULL);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 static struct twl4030_gpio_platform_data sdp2430_gpio_data = {
@@ -184,9 +184,9 @@ static struct i2c_board_info __initdata sdp2430_i2c1_boardinfo[] = {
 
 static int __init omap2430_i2c_init(void)
 {
-	omap_register_i2c_bus(1, 100, sdp2430_i2c1_boardinfo,
+	omap_register_i2c_bus(1, 100, NULL, sdp2430_i2c1_boardinfo,
 			ARRAY_SIZE(sdp2430_i2c1_boardinfo));
-	omap_register_i2c_bus(2, 2600, sdp2430_i2c_boardinfo,
+	omap_register_i2c_bus(2, 2600, NULL, sdp2430_i2c_boardinfo,
 			ARRAY_SIZE(sdp2430_i2c_boardinfo));
 	return 0;
 }
@@ -194,7 +194,7 @@ static int __init omap2430_i2c_init(void)
 static struct omap2_hsmmc_info mmc[] __initdata = {
 	{
 		.mmc		= 1,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 		.ext_clock	= 1,

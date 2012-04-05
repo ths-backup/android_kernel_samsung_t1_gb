@@ -359,6 +359,7 @@ struct musb {
 	struct timer_list	otg_timer;
 #endif
 
+	struct notifier_block	nb;
 	/* called with IRQs blocked; ON/nonzero implies starting a session,
 	 * and waiting at least a_wait_vrise_tmout.
 	 */
@@ -472,7 +473,9 @@ struct musb_context_registers {
 
 #if defined(CONFIG_ARCH_OMAP2430) || defined(CONFIG_ARCH_OMAP3) || \
     defined(CONFIG_ARCH_OMAP4)
-	u32 otg_sysconfig, otg_forcestandby;
+	u32 otg_sysconfig, otg_forcestandby, otg_interfacesel;
+	u32 ctl_dev_conf;
+	u32 usbotg_control;
 #endif
 	u8 power;
 	u16 intrtxe, intrrxe;
@@ -491,11 +494,24 @@ extern void musb_platform_save_context(struct musb *musb,
 		struct musb_context_registers *musb_context);
 extern void musb_platform_restore_context(struct musb *musb,
 		struct musb_context_registers *musb_context);
+
 #else
 #define musb_platform_save_context(m, x)	do {} while (0)
 #define musb_platform_restore_context(m, x)	do {} while (0)
 #endif
 
+#endif
+
+#if defined(CONFIG_ARCH_OMAP2430) || defined(CONFIG_ARCH_OMAP3) || \
+    defined(CONFIG_ARCH_OMAP4)
+
+extern int musb_notifier_call(struct notifier_block *nb,
+		unsigned long event, void *unused);
+extern void phy_clk_set(struct musb *musb, u8 on);
+
+#else
+#define musb_notifier_call(m,x,y)		do {} while (0)
+#define phy_clk_set(m, x)			do {} while (0)
 #endif
 
 static inline void musb_set_vbus(struct musb *musb, int is_on)
@@ -612,7 +628,7 @@ extern int musb_platform_get_vbus_status(struct musb *musb);
 #define musb_platform_get_vbus_status(x)	0
 #endif
 
-extern int __init musb_platform_init(struct musb *musb, void *board_data);
+extern int __init musb_platform_init(struct musb *musb);
 extern int musb_platform_exit(struct musb *musb);
 
 #endif	/* __MUSB_CORE_H__ */

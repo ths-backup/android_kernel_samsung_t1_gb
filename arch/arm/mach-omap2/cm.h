@@ -23,9 +23,9 @@
 #define OMAP34XX_CM_REGADDR(module, reg)				\
 			OMAP2_L4_IO_ADDRESS(OMAP3430_CM_BASE + (module) + (reg))
 #define OMAP44XX_CM1_REGADDR(module, reg)				\
-			OMAP2_L4_IO_ADDRESS(OMAP4430_CM1_BASE + (module) + (reg))
+			OMAP2_L4_IO_ADDRESS(OMAP4430_CM1_BASE + ((module) & (MOD_MASK)) + (reg))
 #define OMAP44XX_CM2_REGADDR(module, reg)				\
-			OMAP2_L4_IO_ADDRESS(OMAP4430_CM2_BASE + (module) + (reg))
+			OMAP2_L4_IO_ADDRESS(OMAP4430_CM2_BASE + ((module) & (MOD_MASK)) + (reg))
 
 #include "cm44xx.h"
 
@@ -113,6 +113,7 @@ extern u32 cm_rmw_mod_reg_bits(u32 mask, u32 bits, s16 module, s16 idx);
 extern int omap2_cm_wait_module_ready(s16 prcm_mod, u8 idlest_id,
 				      u8 idlest_shift);
 extern int omap4_cm_wait_module_ready(void __iomem *clkctrl_reg);
+extern int omap4_cm_wait_module_idle(void __iomem *clkctrl_reg);
 
 static inline u32 cm_set_mod_reg_bits(u32 bits, s16 module, s16 idx)
 {

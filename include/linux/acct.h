@@ -125,7 +125,11 @@ extern int acct_parm[]; /* for sysctl */
 extern void acct_auto_close_mnt(struct vfsmount *m);
 extern void acct_auto_close(struct super_block *sb);
 extern void acct_collect(long exitcode, int group_dead);
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+extern void acct_process(u8 acct_val,int cpu);
+#else
 extern void acct_process(void);
+#endif
 extern void acct_exit_ns(struct pid_namespace *);
 #else
 #define acct_auto_close_mnt(x)	do { } while (0)

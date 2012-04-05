@@ -898,16 +898,11 @@ void omap2_clkdm_allow_idle(struct clockdomain *clkdm)
 		 clkdm->name);
 
 	/*
-	 * XXX This should be removed once TI adds wakeup/sleep
-	 * dependency code and data for OMAP4.
+	 * OMAP4 doesn't need autodeps because at hardware level the dynamic
+	 * depedancy is enabled which should take care of this.
 	 */
-	if (cpu_is_omap44xx()) {
-		WARN_ONCE(1, "clockdomain: OMAP4 wakeup/sleep dependency "
-			  "support is not yet implemented\n");
-	} else {
-		if (atomic_read(&clkdm->usecount) > 0)
+	if ((atomic_read(&clkdm->usecount) > 0) && (!cpu_is_omap44xx()))
 			_clkdm_add_autodeps(clkdm);
-	}
 
 	_omap2_clkdm_set_hwsup(clkdm, 1);
 
@@ -940,16 +935,11 @@ void omap2_clkdm_deny_idle(struct clockdomain *clkdm)
 	_omap2_clkdm_set_hwsup(clkdm, 0);
 
 	/*
-	 * XXX This should be removed once TI adds wakeup/sleep
-	 * dependency code and data for OMAP4.
+	 * OMAP4 doesn't need autodeps because at hardware level the dynamic
+	 * depedancy is enabled which should take care of this.
 	 */
-	if (cpu_is_omap44xx()) {
-		WARN_ONCE(1, "clockdomain: OMAP4 wakeup/sleep dependency "
-			  "support is not yet implemented\n");
-	} else {
-		if (atomic_read(&clkdm->usecount) > 0)
-			_clkdm_del_autodeps(clkdm);
-	}
+	if ((atomic_read(&clkdm->usecount) > 0) && (!cpu_is_omap44xx()))
+		_clkdm_del_autodeps(clkdm);
 }
 
 
@@ -981,7 +971,11 @@ int omap2_clkdm_clk_enable(struct clockdomain *clkdm, struct clk *clk)
 	if (!clkdm || !clk)
 		return -EINVAL;
 
-	if (atomic_inc_return(&clkdm->usecount) > 1)
+	/*
+	 * On omap44xx() usecounting does not make sense as the clkdm
+	 * state needs to be toggled for every module enable
+	 */
+	if ((atomic_inc_return(&clkdm->usecount) > 1) && !cpu_is_omap44xx())
 		return 0;
 
 	/* Clockdomain now has one enabled downstream clock */
@@ -1006,6 +1000,22 @@ int omap2_clkdm_clk_enable(struct clockdomain *clkdm, struct clk *clk)
 
 	pwrdm_wait_transition(clkdm->pwrdm.ptr);
 	pwrdm_clkdm_state_switch(clkdm);
+
+	return 0;
+}
+
+int omap2_clkdm_clk_enable_post(struct clockdomain *clkdm, struct clk *clk)
+{
+	int v;
+
+	if (!cpu_is_omap44xx())
+		return 0;
+
+	v = omap2_clkdm_clktrctrl_read(clkdm);
+
+	if ((v == OMAP34XX_CLKSTCTRL_FORCE_WAKEUP) &&
+				(clkdm->flags & CLKDM_CAN_HWSUP))
+		_omap2_clkdm_set_hwsup(clkdm, 1);
 
 	return 0;
 }
@@ -1057,7 +1067,8 @@ int omap2_clkdm_clk_disable(struct clockdomain *clkdm, struct clk *clk)
 	v = omap2_clkdm_clktrctrl_read(clkdm);
 
 	if ((cpu_is_omap34xx() && v == OMAP34XX_CLKSTCTRL_ENABLE_AUTO) ||
-	    (cpu_is_omap24xx() && v == OMAP24XX_CLKSTCTRL_ENABLE_AUTO)) {
+		(cpu_is_omap24xx() && v == OMAP24XX_CLKSTCTRL_ENABLE_AUTO) ||
+		(cpu_is_omap44xx() && v == OMAP34XX_CLKSTCTRL_ENABLE_AUTO)) {
 		/* Disable HW transitions when we are changing deps */
 		_omap2_clkdm_set_hwsup(clkdm, 0);
 		_clkdm_del_autodeps(clkdm);

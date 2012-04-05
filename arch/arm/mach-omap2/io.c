@@ -28,7 +28,6 @@
 
 #include <asm/mach/map.h>
 
-#include <plat/mux.h>
 #include <plat/sram.h>
 #include <plat/sdrc.h>
 #include <plat/gpmc.h>
@@ -45,7 +44,11 @@
 
 #include <plat/clockdomain.h>
 #include "clockdomains.h"
+
 #include <plat/omap_hwmod.h>
+#include "dmtimer.h"
+
+#include <mach/tf_mshield.h>
 
 /*
  * The machine specific code may provide the extra mapping besides the
@@ -128,43 +131,49 @@ static struct map_desc omap34xx_io_desc[] __initdata = {
 		.virtual	= L3_34XX_VIRT,
 		.pfn		= __phys_to_pfn(L3_34XX_PHYS),
 		.length		= L3_34XX_SIZE,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= L4_34XX_VIRT,
 		.pfn		= __phys_to_pfn(L4_34XX_PHYS),
 		.length		= L4_34XX_SIZE,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
+	},
+	{
+		.virtual        = L4_WK_34XX_VIRT,
+		.pfn            = __phys_to_pfn(L4_WK_34XX_PHYS),
+		.length         = L4_WK_34XX_SIZE,
+		.type           = MT_DEVICE,
 	},
 	{
 		.virtual	= OMAP34XX_GPMC_VIRT,
 		.pfn		= __phys_to_pfn(OMAP34XX_GPMC_PHYS),
 		.length		= OMAP34XX_GPMC_SIZE,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= OMAP343X_SMS_VIRT,
 		.pfn		= __phys_to_pfn(OMAP343X_SMS_PHYS),
 		.length		= OMAP343X_SMS_SIZE,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= OMAP343X_SDRC_VIRT,
 		.pfn		= __phys_to_pfn(OMAP343X_SDRC_PHYS),
 		.length		= OMAP343X_SDRC_SIZE,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= L4_PER_34XX_VIRT,
 		.pfn		= __phys_to_pfn(L4_PER_34XX_PHYS),
 		.length		= L4_PER_34XX_SIZE,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= L4_EMU_34XX_VIRT,
 		.pfn		= __phys_to_pfn(L4_EMU_34XX_PHYS),
 		.length		= L4_EMU_34XX_SIZE,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
 	},
 #if defined(CONFIG_DEBUG_LL) &&							\
 	(defined(CONFIG_MACH_OMAP_ZOOM2) || defined(CONFIG_MACH_OMAP_ZOOM3))
@@ -172,7 +181,7 @@ static struct map_desc omap34xx_io_desc[] __initdata = {
 		.virtual	= ZOOM_UART_VIRT,
 		.pfn		= __phys_to_pfn(ZOOM_UART_BASE),
 		.length		= SZ_1M,
-		.type		= MT_DEVICE
+		.type		= IO_MAP_TYPE,
 	},
 #endif
 };
@@ -183,43 +192,49 @@ static struct map_desc omap44xx_io_desc[] __initdata = {
 		.virtual	= L3_44XX_VIRT,
 		.pfn		= __phys_to_pfn(L3_44XX_PHYS),
 		.length		= L3_44XX_SIZE,
-		.type		= MT_DEVICE,
+		.type		= IO_MAP_TYPE,
+	},
+	{
+		.virtual	= L3_DSS_44XX_VIRT,
+		.pfn		= __phys_to_pfn(L3_DSS_44XX_PHYS),
+		.length		= L3_DSS_44XX_SIZE,
+		.type		= IO_MAP_TYPE
 	},
 	{
 		.virtual	= L4_44XX_VIRT,
 		.pfn		= __phys_to_pfn(L4_44XX_PHYS),
 		.length		= L4_44XX_SIZE,
-		.type		= MT_DEVICE,
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= OMAP44XX_GPMC_VIRT,
 		.pfn		= __phys_to_pfn(OMAP44XX_GPMC_PHYS),
 		.length		= OMAP44XX_GPMC_SIZE,
-		.type		= MT_DEVICE,
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= OMAP44XX_EMIF1_VIRT,
 		.pfn		= __phys_to_pfn(OMAP44XX_EMIF1_PHYS),
 		.length		= OMAP44XX_EMIF1_SIZE,
-		.type		= MT_DEVICE,
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= OMAP44XX_EMIF2_VIRT,
 		.pfn		= __phys_to_pfn(OMAP44XX_EMIF2_PHYS),
 		.length		= OMAP44XX_EMIF2_SIZE,
-		.type		= MT_DEVICE,
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= OMAP44XX_DMM_VIRT,
 		.pfn		= __phys_to_pfn(OMAP44XX_DMM_PHYS),
 		.length		= OMAP44XX_DMM_SIZE,
-		.type		= MT_DEVICE,
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= L4_PER_44XX_VIRT,
 		.pfn		= __phys_to_pfn(L4_PER_44XX_PHYS),
 		.length		= L4_PER_44XX_SIZE,
-		.type		= MT_DEVICE,
+		.type		= IO_MAP_TYPE,
 	},
 	{
 		.virtual	= L4_EMU_44XX_VIRT,
@@ -243,6 +258,10 @@ static void __init _omap2_map_common_io(void)
 	omap_sram_init();
 	omapfb_reserve_sdram();
 	omap_vram_reserve_sdram();
+
+#ifdef CONFIG_TF_MSHIELD
+	tf_allocate_workspace();
+#endif
 }
 
 #ifdef CONFIG_ARCH_OMAP2420
@@ -316,7 +335,12 @@ static int __init _omap2_init_reprogram_sdrc(void)
 void __init omap2_init_common_hw(struct omap_sdrc_params *sdrc_cs0,
 				 struct omap_sdrc_params *sdrc_cs1)
 {
-	pwrdm_init(powerdomains_omap);
+	u8 skip_setup_idle = 0;
+
+	if (cpu_is_omap24xx() || cpu_is_omap34xx())
+		pwrdm_init(powerdomains_omap, &omap2_pwrdm_functions);
+	else if (cpu_is_omap44xx())
+		pwrdm_init(powerdomains_omap, &omap4_pwrdm_functions);
 	clkdm_init(clockdomains_omap, clkdm_autodeps);
 	if (cpu_is_omap242x())
 		omap2420_hwmod_init();
@@ -324,9 +348,10 @@ void __init omap2_init_common_hw(struct omap_sdrc_params *sdrc_cs0,
 		omap2430_hwmod_init();
 	else if (cpu_is_omap34xx())
 		omap3xxx_hwmod_init();
-	omap2_mux_init();
-	/* The OPP tables have to be registered before a clk init */
-	omap_pm_if_early_init(mpu_opps, dsp_opps, l3_opps);
+	else if (cpu_is_omap44xx())
+		omap44xx_hwmod_init();
+
+	omap_pm_if_early_init();
 
 	if (cpu_is_omap2420())
 		omap2420_clk_init();
@@ -340,12 +365,15 @@ void __init omap2_init_common_hw(struct omap_sdrc_params *sdrc_cs0,
 		pr_err("Could not init clock framework - unknown CPU\n");
 
 	omap_serial_early_init();
-	if (cpu_is_omap24xx() || cpu_is_omap34xx())   /* FIXME: OMAP4 */
-		omap_hwmod_late_init();
-	omap_pm_if_init();
+#ifndef CONFIG_PM_RUNTIME
+    skip_setup_idle = 1;
+#endif
+    omap_hwmod_late_init(skip_setup_idle);
 	if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
 		omap2_sdrc_init(sdrc_cs0, sdrc_cs1);
 		_omap2_init_reprogram_sdrc();
 	}
-	gpmc_init();
+	/*SYS_BOOT 0x87 -> 0x80 remove OneNAND boot*/
+	/*gpmc_init();*/
+	omap2_dm_timer_early_init();
 }

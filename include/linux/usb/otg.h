@@ -11,6 +11,10 @@
 
 #include <linux/notifier.h>
 
+#ifdef CONFIG_USB_HOST_NOTIFY
+#include <linux/host_notify.h>
+#endif
+
 /* OTG defines lots of enumeration states before device reset */
 enum usb_otg_state {
 	OTG_STATE_UNDEFINED = 0,
@@ -43,13 +47,6 @@ enum usb_xceiv_events {
 	USB_EVENT_ENUMERATED,   /* gadget driver enumerated */
 };
 
-#define USB_OTG_PULLUP_ID		(1 << 0)
-#define USB_OTG_PULLDOWN_DP		(1 << 1)
-#define USB_OTG_PULLDOWN_DM		(1 << 2)
-#define USB_OTG_EXT_VBUS_INDICATOR	(1 << 3)
-#define USB_OTG_DRV_VBUS		(1 << 4)
-#define USB_OTG_DRV_VBUS_EXT		(1 << 5)
-
 struct otg_transceiver;
 
 /* for transceivers connected thru an ULPI interface, the user must
@@ -73,6 +70,7 @@ struct otg_transceiver {
 
 	u8			default_a;
 	enum usb_otg_state	state;
+	int			event;
 
 	struct usb_bus		*host;
 	struct usb_gadget	*gadget;
@@ -91,6 +89,11 @@ struct otg_transceiver {
 	int	(*init)(struct otg_transceiver *otg);
 	void	(*shutdown)(struct otg_transceiver *otg);
 
+	int	(*enable_irq)(struct otg_transceiver *otg);
+
+	/* for enabling and disabling the transciever clocks*/
+	int	(*set_clk)(struct otg_transceiver *otg,
+					int on);
 	/* bind/unbind the host controller */
 	int	(*set_host)(struct otg_transceiver *otg,
 				struct usb_bus *host);
@@ -116,6 +119,10 @@ struct otg_transceiver {
 
 	/* start or continue HNP role switch */
 	int	(*start_hnp)(struct otg_transceiver *otg);
+
+#ifdef CONFIG_USB_HOST_NOTIFY
+	struct host_notify_dev	ndev;
+#endif
 
 };
 
@@ -146,10 +153,10 @@ static inline int otg_io_read(struct otg_transceiver *otg, u32 reg)
 	return -EINVAL;
 }
 
-static inline int otg_io_write(struct otg_transceiver *otg, u32 reg, u32 val)
+static inline int otg_io_write(struct otg_transceiver *otg, u32 val, u32 reg)
 {
 	if (otg->io_ops && otg->io_ops->write)
-		return otg->io_ops->write(otg, reg, val);
+		return otg->io_ops->write(otg, val, reg);
 
 	return -EINVAL;
 }
@@ -224,6 +231,24 @@ static inline int
 otg_start_srp(struct otg_transceiver *otg)
 {
 	return otg->start_srp(otg);
+}
+
+static inline int
+otg_set_clk(struct otg_transceiver *otg, int on)
+{
+	if (otg->set_clk != NULL)
+		return otg->set_clk(otg, on);
+	else
+		return 0;
+}
+
+static inline int
+otg_set_irq(struct otg_transceiver *otg)
+{
+	if (otg->enable_irq != NULL)
+		return otg->enable_irq(otg);
+	else
+		return 0;
 }
 
 /* notifiers */

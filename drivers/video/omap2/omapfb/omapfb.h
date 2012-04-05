@@ -27,23 +27,28 @@
 #define DEBUG
 #endif
 
+#include <linux/rwsem.h>
+
 #include <plat/display.h>
 
+#define DEBUG
 #ifdef DEBUG
 extern unsigned int omapfb_debug;
 #define DBG(format, ...) \
 	if (omapfb_debug) \
-		printk(KERN_DEBUG "OMAPFB: " format, ## __VA_ARGS__)
+		printk(KERN_INFO "OMAPFB: " format, ## __VA_ARGS__)
 #else
 #define DBG(format, ...)
 #endif
 
 #define FB2OFB(fb_info) ((struct omapfb_info *)(fb_info->par))
+#define DMA_TX_TIMEOUT 10000000
 
 /* max number of overlays to which a framebuffer data can be direct */
 #define OMAPFB_MAX_OVL_PER_FB 3
 
 struct omapfb2_mem_region {
+	int             id;
 	u32		paddr;
 	void __iomem	*vaddr;
 	struct vrfb	vrfb;
@@ -51,19 +56,24 @@ struct omapfb2_mem_region {
 	u8		type;		/* OMAPFB_PLANE_MEM_* */
 	bool		alloc;		/* allocated by the driver */
 	bool		map;		/* kernel mapped by the driver */
+	atomic_t	map_count;
+	struct rw_semaphore lock;
+	atomic_t	lock_count;
 };
 
 /* appended to fb_info */
 struct omapfb_info {
 	int id;
-	struct omapfb2_mem_region region;
-	atomic_t map_count;
+	struct omapfb2_mem_region *region;
 	int num_overlays;
 	struct omap_overlay *overlays[OMAPFB_MAX_OVL_PER_FB];
 	struct omapfb2_device *fbdev;
 	enum omap_dss_rotation_type rotation_type;
 	u8 rotation[OMAPFB_MAX_OVL_PER_FB];
 	bool mirror;
+	bool fit_to_screen;
+	//CSR #OMAPS00242911 
+	u32 paddr2;
 };
 
 struct omapfb2_device {
@@ -76,6 +86,7 @@ struct omapfb2_device {
 
 	unsigned num_fbs;
 	struct fb_info *fbs[10];
+	struct omapfb2_mem_region regions[10];
 
 	unsigned num_displays;
 	struct omap_dss_device *displays[10];
@@ -101,6 +112,33 @@ struct omapfb_colormode {
 	struct fb_bitfield transp;
 };
 
+enum dma_channel_state {
+	DMA_CHAN_NOT_ALLOTED,
+	DMA_CHAN_ALLOTED,
+};
+
+struct oly_mgr_flds {
+int width;
+int height;
+int mode;
+unsigned long copy_buf[2];
+unsigned long copy_buf_alloc[2];
+int copy_dst_idx;
+int copy_buf_idx;
+int dma_en;
+int dma_fn;
+int dma_src_fi;
+int dma_dst_fi;
+};
+
+struct vid_Tiler_dma {
+	int dev_id;
+	int dma_ch;
+	int req_status;
+	int tx_status;
+	wait_queue_head_t wait;
+};
+
 void set_fb_fix(struct fb_info *fbi);
 int check_fb_var(struct fb_info *fbi, struct fb_var_screeninfo *var);
 int omapfb_realloc_fbmem(struct fb_info *fbi, unsigned long size, int type);
@@ -116,6 +154,19 @@ int omapfb_update_window(struct fb_info *fbi,
 
 int dss_mode_to_fb_mode(enum omap_color_mode dssmode,
 			struct fb_var_screeninfo *var);
+
+int omapfb_setup_overlay(struct fb_info *fbi, struct omap_overlay *ovl,
+		u16 posx, u16 posy, u16 outw, u16 outh);
+
+int tiler_fb_mem_init(struct fb_info *fbi);
+
+void dma_init(void);
+
+unsigned int copy1DTo2D(int phyadd);
+
+extern struct vid_Tiler_dma tiler_dma_tx;
+extern  struct oly_mgr_flds ovlDatafld;
+
 
 /* find the display connected to this fb, if any */
 static inline struct omap_dss_device *fb2display(struct fb_info *fbi)
@@ -148,8 +199,24 @@ static inline int omapfb_overlay_enable(struct omap_overlay *ovl,
 	struct omap_overlay_info info;
 
 	ovl->get_overlay_info(ovl, &info);
+	if (info.enabled == enable)
+		return 0;
 	info.enabled = enable;
 	return ovl->set_overlay_info(ovl, &info);
+}
+
+static inline struct omapfb2_mem_region *
+omapfb_get_mem_region(struct omapfb2_mem_region *rg)
+{
+	down_read_nested(&rg->lock, rg->id);
+	atomic_inc(&rg->lock_count);
+	return rg;
+}
+
+static inline void omapfb_put_mem_region(struct omapfb2_mem_region *rg)
+{
+	atomic_dec(&rg->lock_count);
+	up_read(&rg->lock);
 }
 
 #endif

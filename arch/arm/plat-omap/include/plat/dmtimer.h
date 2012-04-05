@@ -3,6 +3,12 @@
  *
  * OMAP Dual-Mode Timers
  *
+ * Copyright (C) 2010 Texas Instruments Incorporated - http://www.ti.com/
+ * Tarun Kanti DebBarma <tarun.kanti@ti.com>
+ * Thara Gopinath <thara@ti.com>
+ *
+ * Platform device conversion and hwmod support.
+ *
  * Copyright (C) 2005 Nokia Corporation
  * Author: Lauri Leukkunen <lauri.leukkunen@nokia.com>
  * PWM and clock framwork support by Timo Teras.
@@ -29,6 +35,8 @@
 #ifndef __ASM_ARCH_DMTIMER_H
 #define __ASM_ARCH_DMTIMER_H
 
+#include <linux/platform_device.h>
+
 /* clock sources */
 #define OMAP_TIMER_SRC_SYS_CLK			0x00
 #define OMAP_TIMER_SRC_32_KHZ			0x01
@@ -44,10 +52,25 @@
 #define OMAP_TIMER_TRIGGER_OVERFLOW		0x01
 #define OMAP_TIMER_TRIGGER_OVERFLOW_AND_COMPARE	0x02
 
+/*
+ * IP revision identifier so that Highlander IP
+ * in OMAP 4 can be distinguished.
+ */
+#define OMAP_TIMER_IP_VERSION_1			0x1
+#define OMAP_TIMER_IP_VERSION_2			0x2
+
 struct omap_dm_timer;
+extern struct omap_dm_timer *gptimer_wakeup;
+extern struct sys_timer omap_timer;
 struct clk;
 
-int omap_dm_timer_init(void);
+struct dmtimer_platform_data {
+	int (*set_timer_src) (struct platform_device *pdev, int source);
+	int timer_ip_type;
+	int func_offset;
+	int intr_offset;
+	u32 is_early_init:1;
+};
 
 struct omap_dm_timer *omap_dm_timer_request(void);
 struct omap_dm_timer *omap_dm_timer_request_specific(int timer_id);
@@ -79,6 +102,8 @@ unsigned int omap_dm_timer_read_counter(struct omap_dm_timer *timer);
 void omap_dm_timer_write_counter(struct omap_dm_timer *timer, unsigned int value);
 
 int omap_dm_timers_active(void);
+void omap_dm_timer_set_int_disable(struct omap_dm_timer *, unsigned int);
 
+void omap_dm_timer_save_context(struct omap_dm_timer *timer);
 
 #endif /* __ASM_ARCH_DMTIMER_H */

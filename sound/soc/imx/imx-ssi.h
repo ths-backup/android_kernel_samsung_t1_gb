@@ -183,9 +183,6 @@
 #define IMX_SSI_RX_DIV_PSR	4
 #define IMX_SSI_RX_DIV_PM	5
 
-extern struct snd_soc_dai imx_ssi_pcm_dai[2];
-extern struct snd_soc_platform imx_soc_platform;
-
 #define DRV_NAME "imx-ssi"
 
 struct imx_pcm_dma_params {
@@ -197,7 +194,7 @@ struct imx_pcm_dma_params {
 struct imx_ssi {
 	struct platform_device *ac97_dev;
 
-	struct snd_soc_device imx_ac97;
+	struct snd_soc_dai *imx_ac97;
 	struct clk *clk;
 	void __iomem *base;
 	int irq;
@@ -222,8 +219,7 @@ struct snd_soc_platform *imx_ssi_dma_mx2_init(struct platform_device *pdev,
 		struct imx_ssi *ssi);
 
 int snd_imx_pcm_mmap(struct snd_pcm_substream *substream, struct vm_area_struct *vma);
-int imx_pcm_new(struct snd_card *card, struct snd_soc_dai *dai,
-	struct snd_pcm *pcm);
+int imx_pcm_new(struct snd_soc_pcm_runtime *rtd);
 void imx_pcm_free(struct snd_pcm *pcm);
 
 /*

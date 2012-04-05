@@ -12,8 +12,14 @@
 
 #include <linux/mmc/core.h>
 
+#ifdef CONFIG_MMC_DISCARD_MERGE
+#include <linux/mmc/discard.h>
+#endif
 struct mmc_cid {
 	unsigned int		manfid;
+#ifdef CONFIG_MMC_DISCARD_MOVINAND
+#define MMC_CSD_MANFID_MOVINAND		21
+#endif /* CONFIG_MMC_DISCARD_MOVINAND */
 	char			prod_name[8];
 	unsigned int		serial;
 	unsigned short		oemid;
@@ -24,12 +30,16 @@ struct mmc_cid {
 };
 
 struct mmc_csd {
+	unsigned char		structure;
 	unsigned char		mmca_vsn;
 	unsigned short		cmdclass;
 	unsigned short		tacc_clks;
 	unsigned int		tacc_ns;
 	unsigned int		r2w_factor;
 	unsigned int		max_dtr;
+#ifdef CONFIG_MMC_DISCARD
+	unsigned int		erase_size; 	/* In sectors */
+#endif /* CONFIG_MMC_DISCARD */
 	unsigned int		read_blkbits;
 	unsigned int		write_blkbits;
 	unsigned int		capacity;
@@ -41,9 +51,21 @@ struct mmc_csd {
 
 struct mmc_ext_csd {
 	u8			rev;
+#ifdef CONFIG_MMC_DISCARD
+	u8			erase_group_def;
+	u8			sec_feature_support;
+#endif /* CONFIG_MMC_DISCARD */
 	unsigned int		sa_timeout;		/* Units: 100ns */
 	unsigned int		hs_max_dtr;
 	unsigned int		sectors;
+	unsigned int		card_type;
+#ifdef CONFIG_MMC_DISCARD
+	unsigned int		hc_erase_size;		/* In sectors */
+	unsigned int		hc_erase_timeout;	/* In milliseconds */
+	unsigned int		sec_trim_mult;	/* Secure trim multiplier  */
+	unsigned int		sec_erase_mult;	/* Secure erase multiplier */
+	unsigned int		trim_timeout;		/* In milliseconds */
+#endif /* CONFIG_MMC_DISCARD */
 };
 
 struct sd_scr {
@@ -97,11 +119,23 @@ struct mmc_card {
 #define MMC_STATE_READONLY	(1<<1)		/* card is read-only */
 #define MMC_STATE_HIGHSPEED	(1<<2)		/* card is in high speed mode */
 #define MMC_STATE_BLOCKADDR	(1<<3)		/* card uses block-addressing */
+#define MMC_STATE_HIGHSPEED_DDR (1<<4)		/* card is in high speed mode */
 	unsigned int		quirks; 	/* card quirks */
 #define MMC_QUIRK_LENIENT_FN0	(1<<0)		/* allow SDIO FN0 writes outside of the VS CCCR range */
 #define MMC_QUIRK_BLKSZ_FOR_BYTE_MODE (1<<1)	/* use func->cur_blksize */
 						/* for byte mode */
+#ifdef CONFIG_MMC_DISCARD_MERGE
+    struct discard_context discard_ctx;
+#endif
+#ifdef CONFIG_MMC_DISCARD
+    unsigned int        erase_size; /* erase size in sectors */
+    unsigned int        erase_shift;    /* if erase unit is power 2 */
+    unsigned int        pref_erase; /* in sectors */
 
+#ifdef CONFIG_MMC_DISCARD_MOVINAND
+	unsigned int        pref_trim; /* in sectors */
+#endif /* CONFIG_MMC_DISCARD_MOVINAND */
+#endif /* CONFIG_MMC_DISCARD */
 	u32			raw_cid[4];	/* raw card CID */
 	u32			raw_csd[4];	/* raw card CSD */
 	u32			raw_scr[2];	/* raw card SCR */
@@ -130,11 +164,13 @@ struct mmc_card {
 #define mmc_card_readonly(c)	((c)->state & MMC_STATE_READONLY)
 #define mmc_card_highspeed(c)	((c)->state & MMC_STATE_HIGHSPEED)
 #define mmc_card_blockaddr(c)	((c)->state & MMC_STATE_BLOCKADDR)
+#define mmc_card_ddr_mode(c)	((c)->state & MMC_STATE_HIGHSPEED_DDR)
 
 #define mmc_card_set_present(c)	((c)->state |= MMC_STATE_PRESENT)
 #define mmc_card_set_readonly(c) ((c)->state |= MMC_STATE_READONLY)
 #define mmc_card_set_highspeed(c) ((c)->state |= MMC_STATE_HIGHSPEED)
 #define mmc_card_set_blockaddr(c) ((c)->state |= MMC_STATE_BLOCKADDR)
+#define mmc_card_set_ddr_mode(c) ((c)->state |= MMC_STATE_HIGHSPEED_DDR)
 
 static inline int mmc_card_lenient_fn0(const struct mmc_card *c)
 {

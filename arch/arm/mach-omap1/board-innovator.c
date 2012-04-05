@@ -290,7 +290,6 @@ static void __init innovator_init_irq(void)
 {
 	omap1_init_common_hw();
 	omap_init_irq();
-	omap_gpio_init();
 #ifdef CONFIG_ARCH_OMAP15XX
 	if (cpu_is_omap1510()) {
 		omap1510_fpga_init_irq();
@@ -435,7 +434,7 @@ static void __init innovator_init(void)
 	omap_board_config = innovator_config;
 	omap_board_config_size = ARRAY_SIZE(innovator_config);
 	omap_serial_init();
-	omap_register_i2c_bus(1, 100, NULL, 0);
+	omap_register_i2c_bus(1, 100, NULL, NULL, 0);
 	innovator_mmc_init();
 }
 

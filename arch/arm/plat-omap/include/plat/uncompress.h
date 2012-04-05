@@ -147,6 +147,12 @@ static inline void __arch_decomp_setup(unsigned long arch_id)
 
 		/* omap4 based boards using UART3 */
 		DEBUG_LL_OMAP4(3, omap_4430sdp);
+#if defined (CONFIG_MACH_OMAP4_SAMSUNG)
+#define SEC_DEBUG_LL_OMAP4(p, mach)	DEBUG_LL_OMAP4(p, mach)
+		SEC_DEBUG_LL_OMAP4(CONFIG_SAMSUNG_CONSOLE_UART, omap4_samsung);
+#endif /* CONFIG_MACH_OMAP_SAMSUNG */
+
+		DEBUG_LL_OMAP4(3, omap4_panda);
 
 		/* zoom2/3 external uart */
 		DEBUG_LL_ZOOM(omap_zoom2);

@@ -22,10 +22,19 @@
 #define RGB_VRFB_BPP    1
 #define MAX_CID		3
 #define MAC_VRFB_CTXS	4
+#ifdef CONFIG_ARCH_OMAP4
+#define MAX_VOUT_DEV	3
+#define MAX_OVLS	4
+#define MAX_DISPLAYS	4
+#else
 #define MAX_VOUT_DEV	2
 #define MAX_OVLS	3
 #define MAX_DISPLAYS	3
+#endif
 #define MAX_MANAGERS	3
+
+/* TI Private V4L2 ioctls */
+#define V4L2_CID_TI_DISPC_OVERLAY	(V4L2_CID_PRIVATE_BASE + 0)
 
 /* Enum for Rotation
  * DSS understands rotation in 0, 1, 2, 3 context
@@ -71,6 +80,14 @@ struct omap2video_device {
 	struct omap_overlay_manager *managers[MAX_MANAGERS];
 };
 
+/* manual update work */
+struct omap_vout_work {
+	struct omap_vout_device *vout;
+	struct work_struct work;
+	bool process;
+	bool queued;
+};
+
 /* per-device data structure */
 struct omap_vout_device {
 
@@ -89,6 +106,13 @@ struct omap_vout_device {
 	/* keep buffer info across opens */
 	unsigned long buf_virt_addr[VIDEO_MAX_FRAME];
 	unsigned long buf_phy_addr[VIDEO_MAX_FRAME];
+	/* keep which buffers we actually allocated (via tiler) */
+	unsigned long buf_phy_uv_addr_alloced[VIDEO_MAX_FRAME];
+	unsigned long buf_phy_addr_alloced[VIDEO_MAX_FRAME];
+
+/* NV12 support*/
+	unsigned long buf_phy_uv_addr[VIDEO_MAX_FRAME];
+	u8 *queued_buf_uv_addr[VIDEO_MAX_FRAME];
 	enum omap_color_mode dss_mode;
 
 	/* we don't allow to request new buffer when old buffers are
@@ -133,7 +157,8 @@ struct omap_vout_device {
 	struct videobuf_buffer *cur_frm, *next_frm;
 	struct list_head dma_queue;
 	u8 *queued_buf_addr[VIDEO_MAX_FRAME];
-	u32 cropped_offset;
+	u32 cropped_offset[VIDEO_MAX_FRAME];
+	u32 cropped_uv_offset[VIDEO_MAX_FRAME];
 	s32 tv_field1_offset;
 	void *isr_handle;
 
@@ -142,6 +167,19 @@ struct omap_vout_device {
 	enum v4l2_buf_type type;
 	struct videobuf_queue vbq;
 	int io_allowed;
+	/* writeback variables*/
+	bool wb_enabled;
+	bool buf_empty;
 
+	/* workqueue for manual update */
+	struct omap_vout_work *work;
+	struct workqueue_struct *workqueue;
+};
+
+struct vout_platform_data {
+	void (*set_min_bus_tput)(struct device *dev, u8 agent_id,
+			unsigned long r);
+	void (*set_max_mpu_wakeup_lat)(struct device *dev, long t);
+	void (*set_cpu_freq)(unsigned long f);
 };
 #endif	/* ifndef OMAP_VOUTDEF_H */

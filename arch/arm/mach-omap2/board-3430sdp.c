@@ -24,6 +24,7 @@
 #include <linux/regulator/machine.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
+#include <linux/mmc/host.h>
 
 #include <mach/hardware.h>
 #include <asm/mach-types.h>
@@ -47,6 +48,7 @@
 #include "sdram-qimonda-hyb18m512160af-6.h"
 #include "hsmmc.h"
 #include "pm.h"
+#include "smartreflex-class3.h"
 
 #define CONFIG_DISABLE_HFCLK 1
 
@@ -328,7 +330,6 @@ static void __init omap_3430sdp_init_irq(void)
 	omap3_pm_init_cpuidle(omap3_cpuidle_params_table);
 	omap2_init_common_hw(hyb18m512160af6_sdrc_params, NULL);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 static int sdp3430_batt_table[] = {
@@ -353,13 +354,19 @@ static struct omap2_hsmmc_info mmc[] = {
 		/* 8 bits (default) requires S6.3 == ON,
 		 * so the SIM card isn't used; else 4 bits.
 		 */
-		.wires		= 8,
+		.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
 		.gpio_wp	= 4,
+#ifdef CONFIG_PM_RUNTIME
+		.power_saving	= true,
+#endif
 	},
 	{
 		.mmc		= 2,
-		.wires		= 8,
+		.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
 		.gpio_wp	= 7,
+#ifdef CONFIG_PM_RUNTIME
+		.power_saving	= true,
+#endif
 	},
 	{}	/* Terminator */
 };
@@ -605,12 +612,12 @@ static struct i2c_board_info __initdata sdp3430_i2c_boardinfo[] = {
 static int __init omap3430_i2c_init(void)
 {
 	/* i2c1 for PMIC only */
-	omap_register_i2c_bus(1, 2600, sdp3430_i2c_boardinfo,
+	omap_register_i2c_bus(1, 2600, NULL, sdp3430_i2c_boardinfo,
 			ARRAY_SIZE(sdp3430_i2c_boardinfo));
 	/* i2c2 on camera connector (for sensor control) and optional isp1301 */
-	omap_register_i2c_bus(2, 400, NULL, 0);
+	omap_register_i2c_bus(2, 400, NULL, NULL, 0);
 	/* i2c3 on display connector (for DVI, tfp410) */
-	omap_register_i2c_bus(3, 400, NULL, 0);
+	omap_register_i2c_bus(3, 400, NULL, NULL, 0);
 	return 0;
 }
 
@@ -647,11 +654,11 @@ static void enable_board_wakeup_source(void)
 		OMAP_WAKEUP_EN | OMAP_PIN_INPUT_PULLUP);
 }
 
-static const struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
+static const struct usbhs_omap_platform_data usbhs_pdata __initconst = {
 
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[1] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset  = true,
 	.reset_gpio_port[0]  = 57,
@@ -800,7 +807,8 @@ static void __init omap_3430sdp_init(void)
 	sdp_flash_init(sdp_flash_partitions);
 	sdp3430_display_init();
 	enable_board_wakeup_source();
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
+	sr_class3_init();
 }
 
 static void __init omap_3430sdp_map_io(void)

@@ -30,6 +30,7 @@ static u64 get_coherent_dma_mask(struct device *dev)
 
 	if (dev) {
 		mask = dev->coherent_dma_mask;
+		mask = (mask - 1) | mask;
 
 		/*
 		 * Sanity check the DMA mask - it must be non-zero, and
@@ -319,6 +320,21 @@ dma_alloc_coherent(struct device *dev, size_t size, dma_addr_t *handle, gfp_t gf
 EXPORT_SYMBOL(dma_alloc_coherent);
 
 /*
+ * Allocate DMA-coherent memory space and return both the kernel remapped
+ * virtual and bus address for that space for SO write operation.
+ */
+void *
+dma_alloc_so_coherent(struct device *dev, size_t size, dma_addr_t *handle,
+	gfp_t gfp)
+{
+	void *memory;
+
+	return __dma_alloc(dev, size, handle, gfp,
+		pgprot_so_dmacoherent(pgprot_kernel));
+}
+EXPORT_SYMBOL(dma_alloc_so_coherent);
+
+/*
  * Allocate a writecombining region, in much the same way as
  * dma_alloc_coherent above.
  */
@@ -508,6 +524,12 @@ void ___dma_page_dev_to_cpu(struct page *page, unsigned long off,
 		outer_inv_range(paddr, paddr + size);
 
 	dma_cache_maint_page(page, off, size, dir, dmac_unmap_area);
+
+	/*
+	 * Mark the D-cache clean for this page to avoid extra flushing.
+	 */
+	if (dir != DMA_TO_DEVICE && off == 0 && size >= PAGE_SIZE)
+		set_bit(PG_dcache_clean, &page->flags);
 }
 EXPORT_SYMBOL(___dma_page_dev_to_cpu);
 

@@ -92,6 +92,60 @@
 
 /* ----------------------------------------------------------------------- */
 
+/* Maps the buffer to dma  */
+
+static inline void map_dma_buffer(struct musb_request *request,
+				struct musb *musb)
+{
+	if (request->request.dma == DMA_ADDR_INVALID) {
+		request->request.dma = dma_map_single(
+				musb->controller,
+				request->request.buf,
+				request->request.length,
+				request->tx
+					? DMA_TO_DEVICE
+					: DMA_FROM_DEVICE);
+		request->mapped = 1;
+	} else {
+		dma_sync_single_for_device(musb->controller,
+			request->request.dma,
+			request->request.length,
+			request->tx
+				? DMA_TO_DEVICE
+				: DMA_FROM_DEVICE);
+		request->mapped = 0;
+	}
+}
+
+
+/* Unmap the buffer from dma and maps it back to cpu */
+static inline void unmap_dma_buffer(struct musb_request *request,
+				struct musb *musb)
+{
+	if (request->request.dma != DMA_ADDR_INVALID) {
+		if (request->mapped) {
+			dma_unmap_single(musb->controller,
+				request->request.dma,
+				request->request.length,
+				request->tx
+					? DMA_TO_DEVICE
+					: DMA_FROM_DEVICE);
+			request->request.dma = DMA_ADDR_INVALID;
+			request->mapped = 0;
+		} else {
+			dma_sync_single_for_cpu(musb->controller,
+				request->request.dma,
+				request->request.length,
+				request->tx
+					? DMA_TO_DEVICE
+					: DMA_FROM_DEVICE);
+
+		}
+	}
+}
+
+static void stop_activity(struct musb *musb, struct usb_gadget_driver *driver);
+
 /*
  * Immediately complete a request.
  *
@@ -111,7 +165,10 @@ __acquires(ep->musb->lock)
 	int			busy = ep->busy;
 
 	req = to_musb_request(request);
-
+	if (!req) {
+		WARN_ON(1);
+		return;
+	}
 	list_del(&request->list);
 	if (req->request.status == -EINPROGRESS)
 		req->request.status = status;
@@ -119,23 +176,11 @@ __acquires(ep->musb->lock)
 
 	ep->busy = 1;
 	spin_unlock(&musb->lock);
-	if (is_dma_capable()) {
-		if (req->mapped) {
-			dma_unmap_single(musb->controller,
-					req->request.dma,
-					req->request.length,
-					req->tx
-						? DMA_TO_DEVICE
-						: DMA_FROM_DEVICE);
-			req->request.dma = DMA_ADDR_INVALID;
-			req->mapped = 0;
-		} else if (req->request.dma != DMA_ADDR_INVALID)
-			dma_sync_single_for_cpu(musb->controller,
-					req->request.dma,
-					req->request.length,
-					req->tx
-						? DMA_TO_DEVICE
-						: DMA_FROM_DEVICE);
+	if (is_dma_capable() && ep->dma) {
+		struct dma_controller	*c = ep->musb->dma_controller;
+		c->channel_release(ep->dma);
+		ep->dma = NULL;
+		unmap_dma_buffer(req, musb);
 	}
 	if (request->status == 0)
 		DBG(5, "%s done request %p,  %d/%d\n",
@@ -260,13 +305,13 @@ static inline int max_ep_writesize(struct musb *musb, struct musb_ep *ep)
 static void txstate(struct musb *musb, struct musb_request *req)
 {
 	u8			epnum = req->epnum;
-	struct musb_ep		*musb_ep;
+	struct musb_ep		*musb_ep = req->ep;
 	void __iomem		*epio = musb->endpoints[epnum].regs;
 	struct usb_request	*request;
 	u16			fifo_count = 0, csr;
 	int			use_dma = 0;
-
-	musb_ep = req->ep;
+	struct musb_hw_ep	*hw_ep = musb_ep->hw_ep;
+	struct dma_controller	*c = musb->dma_controller;
 
 	/* we shouldn't get here while DMA is active ... but we do ... */
 	if (dma_channel_status(musb_ep->dma) == MUSB_DMA_STATUS_BUSY) {
@@ -298,9 +343,23 @@ static void txstate(struct musb *musb, struct musb_request *req)
 			csr);
 
 #ifndef	CONFIG_MUSB_PIO_ONLY
-	if (is_dma_capable() && musb_ep->dma) {
-		struct dma_controller	*c = musb->dma_controller;
+	if (is_dma_capable() && !musb_ep->dma) {
 
+		/*
+		 * allocate dma channel if not allocated
+		 * for this endpoint already
+		 */
+		musb_ep->dma = c->channel_alloc(c, hw_ep, musb_ep->is_in);
+
+		/*
+		 * channel allocation is successfull now map the
+		 * buffer to dma configure the DMA channel for
+		 * recieving the packets
+		 */
+		if (musb_ep->dma)
+			map_dma_buffer(req, musb);
+	}
+	if (musb_ep->dma) {
 		use_dma = (request->dma != DMA_ADDR_INVALID);
 
 		/* MUSB_TXCSR_P_ISO is still set correctly */
@@ -393,6 +452,13 @@ static void txstate(struct musb *musb, struct musb_request *req)
 #endif
 
 	if (!use_dma) {
+		/*
+		 * Unmap the dma buffer back to cpu if dma channel
+		 * programming fails
+		 */
+		if (is_dma_capable() && musb_ep->dma)
+			unmap_dma_buffer(req, musb);
+
 		musb_write_fifo(musb_ep->hw_ep, fifo_count,
 				(u8 *) (request->buf + request->actual));
 		request->actual += fifo_count;
@@ -564,6 +630,7 @@ void musb_g_tx(struct musb *musb, u8 epnum)
 /*
  * Context: controller locked, IRQs blocked, endpoint selected
  */
+
 static void rxstate(struct musb *musb, struct musb_request *req)
 {
 	const u8		epnum = req->epnum;
@@ -573,7 +640,9 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 	unsigned		fifo_count = 0;
 	u16			len = musb_ep->packet_sz;
 	u16			csr = musb_readw(epio, MUSB_RXCSR);
+	u8                      use_mode_1;
 
+	struct musb_hw_ep	*hw_ep = musb_ep->hw_ep;
 	/* We shouldn't get here while DMA is active, but we do... */
 	if (dma_channel_status(musb_ep->dma) == MUSB_DMA_STATUS_BUSY) {
 		DBG(4, "DMA pending...\n");
@@ -586,6 +655,21 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 		return;
 	}
 
+	if (is_dma_capable() && !musb_ep->dma) {
+		struct dma_controller	*c = musb->dma_controller;
+		/*
+		 * Allocate dma channel if not allocated
+		 * for this endpoint already
+		 */
+		musb_ep->dma = c->channel_alloc(c, hw_ep, musb_ep->is_in);
+		/*
+		 * Channel allocation is successfull now map the buffer
+		 * to dma configure the DMA channel for recieving the
+		 * packets
+		 */
+		if (musb_ep->dma)
+			map_dma_buffer(req, musb);
+	}
 	if (is_cppi_enabled() && musb_ep->dma) {
 		struct dma_controller	*c = musb->dma_controller;
 		struct dma_channel	*channel = musb_ep->dma;
@@ -601,9 +685,10 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 				request->dma + request->actual,
 				request->length - request->actual)) {
 
-			/* make sure that if an rxpkt arrived after the irq,
-			 * the cppi engine will be ready to take it as soon
-			 * as DMA is enabled
+			/*
+			 * Make sure that if an rxpkt arrived after the
+			 * irq,the cppi engine will be ready to take it
+			 * as soon as DMA is enabled
 			 */
 			csr &= ~(MUSB_RXCSR_AUTOCLEAR
 					| MUSB_RXCSR_DMAMODE);
@@ -615,6 +700,18 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 
 	if (csr & MUSB_RXCSR_RXPKTRDY) {
 		len = musb_readw(epio, MUSB_RXCOUNT);
+
+		/*
+		 * Enable Mode 1 for RX transfers only for mass-storage
+		 * use-case, based on short_not_ok flag which is set only
+		 * from file_storage and f_mass_storage drivers
+		 */
+
+		if (request->short_not_ok && len == musb_ep->packet_sz)
+			use_mode_1 = 1;
+		else
+			use_mode_1 = 0;
+
 		if (request->actual < request->length) {
 #ifdef CONFIG_USB_INVENTRA_DMA
 			if (is_dma_capable() && musb_ep->dma) {
@@ -646,32 +743,37 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 	 * then becomes usable as a runtime "use mode 1" hint...
 	 */
 
-				csr |= MUSB_RXCSR_DMAENAB;
-#ifdef USE_MODE1
-				csr |= MUSB_RXCSR_AUTOCLEAR;
-				/* csr |= MUSB_RXCSR_DMAMODE; */
+	/* Experimental: Mode1 works with mass storage use cases
+	 */
+		if (use_mode_1) {
 
-				/* this special sequence (enabling and then
-				 * disabling MUSB_RXCSR_DMAMODE) is required
-				 * to get DMAReq to activate
-				 */
-				musb_writew(epio, MUSB_RXCSR,
-					csr | MUSB_RXCSR_DMAMODE);
-#endif
+			/* this special sequence (enabling and then
+			 * disabling MUSB_RXCSR_DMAMODE) is required
+			 * to get DMAReq to activate
+			 */
+				csr |= MUSB_RXCSR_AUTOCLEAR;
 				musb_writew(epio, MUSB_RXCSR, csr);
+				csr |= MUSB_RXCSR_DMAENAB;
+				musb_writew(epio, MUSB_RXCSR, csr);
+				csr |= MUSB_RXCSR_DMAMODE;
+				musb_writew(epio, MUSB_RXCSR, csr);
+				csr |= MUSB_RXCSR_DMAENAB;
+				musb_writew(epio, MUSB_RXCSR, csr);
+		} else {
+				csr |= MUSB_RXCSR_DMAENAB;
+				musb_writew(epio, MUSB_RXCSR, csr);
+		}
 
 				if (request->actual < request->length) {
 					int transfer_size = 0;
-#ifdef USE_MODE1
+		if (use_mode_1) {
 					transfer_size = min(request->length,
 							channel->max_len);
-#else
+					musb_ep->dma->desired_mode = 1;
+		} else {
 					transfer_size = len;
-#endif
-					if (transfer_size <= musb_ep->packet_sz)
-						musb_ep->dma->desired_mode = 0;
-					else
-						musb_ep->dma->desired_mode = 1;
+					musb_ep->dma->desired_mode = 0;
+		}
 
 					use_dma = c->channel_program(
 							channel,
@@ -711,6 +813,13 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 					return;
 			}
 #endif
+			/*
+			 * Unmap the dma buffer back to cpu if dma channel
+			 * programming fails. This buffer is mapped if the
+			 * channel allocation is successful
+			 */
+			if (is_dma_capable())
+				unmap_dma_buffer(req, musb);
 
 			musb_read_fifo(musb_ep->hw_ep, fifo_count, (u8 *)
 					(request->buf + request->actual));
@@ -893,17 +1002,7 @@ static int musb_gadget_enable(struct usb_ep *ep,
 		int_txe |= (1 << epnum);
 		musb_writew(mbase, MUSB_INTRTXE, int_txe);
 
-		/* REVISIT if can_bulk_split(), use by updating "tmp";
-		 * likewise high bandwidth periodic tx
-		 */
-		/* Set TXMAXP with the FIFO size of the endpoint
-		 * to disable double buffering mode. Currently, It seems that double
-		 * buffering has problem if musb RTL revision number < 2.0.
-		 */
-		if (musb->hwvers < MUSB_HWVERS_2000)
-			musb_writew(regs, MUSB_TXMAXP, hw_ep->max_packet_sz_tx);
-		else
-			musb_writew(regs, MUSB_TXMAXP, tmp);
+		musb_writew(regs, MUSB_TXMAXP, tmp);
 
 		csr = MUSB_TXCSR_MODE | MUSB_TXCSR_CLRDATATOG;
 		if (musb_readw(regs, MUSB_TXCSR)
@@ -930,16 +1029,7 @@ static int musb_gadget_enable(struct usb_ep *ep,
 		int_rxe |= (1 << epnum);
 		musb_writew(mbase, MUSB_INTRRXE, int_rxe);
 
-		/* REVISIT if can_bulk_combine() use by updating "tmp"
-		 * likewise high bandwidth periodic rx
-		 */
-		/* Set RXMAXP with the FIFO size of the endpoint
-		 * to disable double buffering mode.
-		 */
-		if (musb->hwvers < MUSB_HWVERS_2000)
-			musb_writew(regs, MUSB_RXMAXP, hw_ep->max_packet_sz_rx);
-		else
-			musb_writew(regs, MUSB_RXMAXP, tmp);
+		musb_writew(regs, MUSB_RXMAXP, tmp);
 
 		/* force shared fifo to OUT-only mode */
 		if (hw_ep->is_shared_fifo) {
@@ -962,20 +1052,13 @@ static int musb_gadget_enable(struct usb_ep *ep,
 	/* NOTE:  all the I/O code _should_ work fine without DMA, in case
 	 * for some reason you run out of channels here.
 	 */
-	if (is_dma_capable() && musb->dma_controller) {
-		struct dma_controller	*c = musb->dma_controller;
-
-		musb_ep->dma = c->channel_alloc(c, hw_ep,
-				(desc->bEndpointAddress & USB_DIR_IN));
-	} else
-		musb_ep->dma = NULL;
 
 	musb_ep->desc = desc;
 	musb_ep->busy = 0;
 	musb_ep->wedged = 0;
 	status = 0;
 
-	pr_debug("%s periph: enabled %s for %s %s, %smaxpacket %d\n",
+	pr_debug("%s periph: enabled %s for %s %s, maxpacket %d\n",
 			musb_driver_name, musb_ep->end_point.name,
 			({ char *s; switch (musb_ep->type) {
 			case USB_ENDPOINT_XFER_BULK:	s = "bulk"; break;
@@ -983,7 +1066,6 @@ static int musb_gadget_enable(struct usb_ep *ep,
 			default:			s = "iso"; break;
 			}; s; }),
 			musb_ep->is_in ? "IN" : "OUT",
-			musb_ep->dma ? "dma, " : "",
 			musb_ep->packet_sz);
 
 	schedule_work(&musb->irq_work);
@@ -1125,30 +1207,8 @@ static int musb_gadget_queue(struct usb_ep *ep, struct usb_request *req,
 	request->epnum = musb_ep->current_epnum;
 	request->tx = musb_ep->is_in;
 
-	if (is_dma_capable() && musb_ep->dma) {
-		if (request->request.dma == DMA_ADDR_INVALID) {
-			request->request.dma = dma_map_single(
-					musb->controller,
-					request->request.buf,
-					request->request.length,
-					request->tx
-						? DMA_TO_DEVICE
-						: DMA_FROM_DEVICE);
-			request->mapped = 1;
-		} else {
-			dma_sync_single_for_device(musb->controller,
-					request->request.dma,
-					request->request.length,
-					request->tx
-						? DMA_TO_DEVICE
-						: DMA_FROM_DEVICE);
-			request->mapped = 0;
-		}
-	} else if (!req->buf) {
+	if (!req->buf)
 		return -ENODATA;
-	} else
-		request->mapped = 0;
-
 	spin_lock_irqsave(&musb->lock, lockflags);
 
 	/* don't queue if the ep is down */
@@ -1537,10 +1597,15 @@ static int musb_gadget_pullup(struct usb_gadget *gadget, int is_on)
 	 * not pullup unless the B-session is active.
 	 */
 	spin_lock_irqsave(&musb->lock, flags);
-	if (is_on != musb->softconnect) {
-		musb->softconnect = is_on;
-		musb_pullup(musb, is_on);
-	}
+	if (is_on) {
+		if (!musb->softconnect) {
+			musb_start(musb);
+			musb->softconnect = 1;
+			musb_pullup(musb, is_on);
+		}
+	} else
+		stop_activity(musb, musb->gadget_driver);
+
 	spin_unlock_irqrestore(&musb->lock, flags);
 	return 0;
 }
@@ -1763,6 +1828,8 @@ int usb_gadget_register_driver(struct usb_gadget_driver *driver)
 		spin_unlock_irqrestore(&musb->lock, flags);
 
 		if (is_otg_enabled(musb)) {
+			struct usb_hcd	*hcd = musb_to_hcd(musb);
+
 			DBG(3, "OTG startup...\n");
 
 			/* REVISIT:  funcall to other code, which also
@@ -1777,8 +1844,11 @@ int usb_gadget_register_driver(struct usb_gadget_driver *driver)
 				musb->gadget_driver = NULL;
 				musb->g.dev.driver = NULL;
 				spin_unlock_irqrestore(&musb->lock, flags);
+			} else {
+				hcd->self.uses_pio_for_control = 1;
 			}
 		}
+		otg_set_irq(musb->xceiv);
 	}
 
 	return retval;
@@ -1876,6 +1946,8 @@ int usb_gadget_unregister_driver(struct usb_gadget_driver *driver)
 
 	if (is_otg_enabled(musb) && retval == 0) {
 		usb_remove_hcd(musb_to_hcd(musb));
+		if (musb->xceiv->set_vbus)
+			otg_set_vbus(musb->xceiv, 0);
 		/* FIXME we need to be able to register another
 		 * gadget driver here and have everything work;
 		 * that currently misbehaves.

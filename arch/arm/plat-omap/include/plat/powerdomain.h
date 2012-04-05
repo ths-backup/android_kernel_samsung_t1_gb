@@ -16,6 +16,9 @@
 
 #include <linux/types.h>
 #include <linux/list.h>
+#include <linux/plist.h>
+#include <linux/mutex.h>
+#include <linux/spinlock.h>
 
 #include <asm/atomic.h>
 
@@ -32,6 +35,7 @@
 
 /* Powerdomain allowable state bitfields */
 #define PWRSTS_ON		(1 << PWRDM_POWER_ON)
+#define PWRSTS_OFF		(1 << PWRDM_POWER_OFF)
 #define PWRSTS_OFF_ON		((1 << PWRDM_POWER_OFF) | \
 				 (1 << PWRDM_POWER_ON))
 
@@ -43,6 +47,14 @@
 
 #define PWRSTS_OFF_RET_ON	(PWRSTS_OFF_RET | (1 << PWRDM_POWER_ON))
 
+#define PWRSTS_RET_INA_ON	((1 << PWRDM_POWER_RET) | \
+				 (1 << PWRDM_POWER_INACTIVE)  | \
+				 (1 << PWRDM_POWER_ON))
+
+#define PWRSTS_OFF_RET_INA_ON	((1 << PWRDM_POWER_OFF) | \
+				 (1 << PWRDM_POWER_RET) | \
+				 (1 << PWRDM_POWER_INACTIVE)  | \
+				 (1 << PWRDM_POWER_ON))
 
 /* Powerdomain flags */
 #define PWRDM_HAS_HDWR_SAR	(1 << 0) /* hardware save-and-restore support */
@@ -56,6 +68,7 @@
 						  * state without waking up the
 						  * powerdomain
 						  */
+#define PWRDM_HAS_LASTPOWERSTATEENT	(1 << 3)
 
 /*
  * Number of memory banks that are power-controllable.	On OMAP4430, the
@@ -71,6 +84,16 @@
 
 /* XXX A completely arbitrary number. What is reasonable here? */
 #define PWRDM_TRANSITION_BAILOUT 100000
+
+/* Powerdomain functional power states */
+#define PWRDM_FUNC_PWRST_OFF	0x0
+#define PWRDM_FUNC_PWRST_OSWR	0x1
+#define PWRDM_FUNC_PWRST_CSWR	0x2
+#define PWRDM_FUNC_PWRST_ON	0x3
+
+#define PWRDM_MAX_FUNC_PWRSTS	4
+
+#define UNSUP_STATE -1
 
 struct clockdomain;
 struct powerdomain;
@@ -92,6 +115,10 @@ struct powerdomain;
  * @state_counter:
  * @timer:
  * @state_timer:
+ * @wakeup_lat: Wakeup latencies for possible powerdomain power states
+ * @wakeuplat_lock: spinlock for plist
+ * @wakeuplat_dev_list: plist_head linking all devices placing constraint
+ * @wakeuplat_mutex: mutex to protect per powerdomain list ops
  */
 struct powerdomain {
 	const char *name;
@@ -101,6 +128,7 @@ struct powerdomain {
 	const u8 pwrsts_logic_ret;
 	const u8 flags;
 	const u8 banks;
+	const s16 context_offset;
 	const u8 pwrsts_mem_ret[PWRDM_MAX_MEM_BANKS];
 	const u8 pwrsts_mem_on[PWRDM_MAX_MEM_BANKS];
 	struct clockdomain *pwrdm_clkdms[PWRDM_MAX_CLKDMS];
@@ -114,10 +142,40 @@ struct powerdomain {
 	s64 timer;
 	s64 state_timer[PWRDM_MAX_PWRSTS];
 #endif
+	const u32 wakeup_lat[PWRDM_MAX_FUNC_PWRSTS];
+	spinlock_t wakeuplat_lock;
+	struct plist_head wakeuplat_dev_list;
+	struct mutex wakeuplat_mutex;
 };
 
+struct wakeuplat_dev_list {
+	struct device *dev;
+	unsigned long constraint_us;
+	struct plist_node node;
+};
 
-void pwrdm_init(struct powerdomain **pwrdm_list);
+struct pwrdm_functions {
+	int	(*pwrdm_set_next_pwrst)(struct powerdomain *pwrdm, u8 pwrst);
+	int	(*pwrdm_read_next_pwrst)(struct powerdomain *pwrdm);
+	int	(*pwrdm_read_pwrst)(struct powerdomain *pwrdm);
+	int	(*pwrdm_read_prev_pwrst)(struct powerdomain *pwrdm);
+	int	(*pwrdm_set_logic_retst)(struct powerdomain *pwrdm, u8 pwrst);
+	int	(*pwrdm_set_mem_onst)(struct powerdomain *pwrdm, u8 bank, u8 pwrst);
+	int	(*pwrdm_set_mem_retst)(struct powerdomain *pwrdm, u8 bank, u8 pwrst);
+	int	(*pwrdm_read_logic_pwrst)(struct powerdomain *pwrdm);
+	int	(*pwrdm_read_prev_logic_pwrst)(struct powerdomain *pwrdm);
+	int	(*pwrdm_read_logic_retst)(struct powerdomain *pwrdm);
+	int	(*pwrdm_read_mem_pwrst)(struct powerdomain *pwrdm, u8 bank);
+	int	(*pwrdm_read_prev_mem_pwrst)(struct powerdomain *pwrdm, u8 bank);
+	int	(*pwrdm_read_mem_retst)(struct powerdomain *pwrdm, u8 bank);
+	int	(*pwrdm_clear_all_prev_pwrst)(struct powerdomain *pwrdm);
+	int	(*pwrdm_enable_hdwr_sar)(struct powerdomain *pwrdm);
+	int	(*pwrdm_disable_hdwr_sar)(struct powerdomain *pwrdm);
+	int	(*pwrdm_set_lowpwrstchange)(struct powerdomain *pwrdm);
+	int	(*pwrdm_wait_transition)(struct powerdomain *pwrdm);
+};
+
+void pwrdm_init(struct powerdomain **pwrdm_list, struct pwrdm_functions *custom_funcs);
 
 struct powerdomain *pwrdm_lookup(const char *name);
 
@@ -161,5 +219,12 @@ int pwrdm_state_switch(struct powerdomain *pwrdm);
 int pwrdm_clkdm_state_switch(struct clockdomain *clkdm);
 int pwrdm_pre_transition(void);
 int pwrdm_post_transition(void);
+int pwrdm_set_lowpwrstchange(struct powerdomain *pwrdm);
+
+int pwrdm_wakeuplat_set_constraint(struct powerdomain *pwrdm,
+				   struct device *dev, unsigned long t);
+int pwrdm_wakeuplat_release_constraint(struct powerdomain *pwrdm,
+				       struct device *dev);
+void pwrdm_wakeuplat_update_pwrst(struct powerdomain *pwrdm);
 
 #endif

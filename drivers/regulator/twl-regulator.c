@@ -149,6 +149,14 @@ static int twlreg_enable(struct regulator_dev *rdev)
 
 	ret = twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_GRP, grp);
 
+	if (twl_class_is_6030())
+	{
+		int cfg_sts;
+		cfg_sts = (0x7 << 5) | 0x1;
+		ret = twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_STATE, cfg_sts);
+	}
+
+
 	udelay(info->delay);
 
 	return ret;
@@ -158,7 +166,7 @@ static int twlreg_disable(struct regulator_dev *rdev)
 {
 	struct twlreg_info	*info = rdev_get_drvdata(rdev);
 	int			grp;
-
+	int 		ret;
 	grp = twlreg_read(info, TWL_MODULE_PM_RECEIVER, VREG_GRP);
 	if (grp < 0)
 		return grp;
@@ -168,7 +176,16 @@ static int twlreg_disable(struct regulator_dev *rdev)
 	else
 		grp &= ~(P1_GRP_6030 | P2_GRP_6030 | P3_GRP_6030);
 
-	return twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_GRP, grp);
+	ret = twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_GRP, grp);
+
+	if (twl_class_is_6030())
+	{
+		int cfg_sts;
+		cfg_sts = 0;
+		ret = twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_STATE, cfg_sts);
+	}
+
+	return ret;
 }
 
 static int twlreg_get_status(struct regulator_dev *rdev)
@@ -366,6 +383,20 @@ static int twl4030ldo_get_voltage(struct regulator_dev *rdev)
 	return LDO_MV(info->table[vsel]) * 1000;
 }
 
+static int twlreg_suspend_enable(struct regulator_dev *rdev)
+{
+	return twlreg_enable(rdev);
+}
+
+static int twlreg_suspend_disable(struct regulator_dev *rdev)
+{
+	/*
+	 * In suspend disable, LDO's sleep state can be configured. Right
+	 * now disabling ldo's at suspend.
+	 */
+	return twlreg_disable(rdev);
+}
+
 static struct regulator_ops twl4030ldo_ops = {
 	.list_voltage	= twl4030ldo_list_voltage,
 
@@ -435,6 +466,8 @@ static struct regulator_ops twl6030ldo_ops = {
 	.set_mode	= twlreg_set_mode,
 
 	.get_status	= twlreg_get_status,
+	.set_suspend_enable = twlreg_suspend_enable,
+	.set_suspend_disable = twlreg_suspend_disable,
 };
 
 /*----------------------------------------------------------------------*/
@@ -468,6 +501,8 @@ static struct regulator_ops twlfixed_ops = {
 	.set_mode	= twlreg_set_mode,
 
 	.get_status	= twlreg_get_status,
+	.set_suspend_enable = twlreg_suspend_enable,
+	.set_suspend_disable = twlreg_suspend_disable,
 };
 
 /*----------------------------------------------------------------------*/
@@ -508,7 +543,7 @@ static struct regulator_ops twlfixed_ops = {
 	.desc = { \
 		.name = #label, \
 		.id = TWL6030_REG_##label, \
-		.n_voltages = (max_mVolts - min_mVolts)/100, \
+		.n_voltages = ((max_mVolts - min_mVolts)/100)+1, \
 		.ops = &twl6030ldo_ops, \
 		.type = REGULATOR_VOLTAGE, \
 		.owner = THIS_MODULE, \
@@ -613,6 +648,17 @@ static int __devinit twlreg_probe(struct platform_device *pdev)
 	case TWL4030_REG_VINTANA2:
 	case TWL4030_REG_VINTDIG:
 		c->always_on = true;
+		break;
+	/*
+	 * TODO: This is needed for a Phoenix ES1.0 Errata.
+	 * Once, ES check for Phoenix is implemented. Make
+	 * this conditional only for ES1.
+	 */
+	case TWL6030_REG_VAUX3_6030:
+		/* Set duty-cycle to 100% */
+		twl_i2c_write_u8(TWL6030_MODULE_ID1, 0, TWL6030_VIBCTRL);
+		/* Enable the Vibrator driver */
+		twl_i2c_write_u8(TWL6030_MODULE_ID1, 128, TWL6030_TOGGLE2);
 		break;
 	default:
 		break;

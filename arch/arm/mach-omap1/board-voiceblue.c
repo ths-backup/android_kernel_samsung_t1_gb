@@ -158,7 +158,6 @@ static void __init voiceblue_init_irq(void)
 {
 	omap1_init_common_hw();
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 static void __init voiceblue_init(void)
@@ -199,7 +198,7 @@ static void __init voiceblue_init(void)
 	omap_board_config_size = ARRAY_SIZE(voiceblue_config);
 	omap_serial_init();
 	omap_usb_init(&voiceblue_usb_config);
-	omap_register_i2c_bus(1, 100, NULL, 0);
+	omap_register_i2c_bus(1, 100, NULL, NULL, 0);
 
 	/* There is a good chance board is going up, so enable power LED
 	 * (it is connected through invertor) */

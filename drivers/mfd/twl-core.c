@@ -58,6 +58,16 @@
 
 #define DRIVER_NAME			"twl"
 
+#if defined(CONFIG_TWL4030_BCI_BATTERY) || \
+	defined(CONFIG_TWL4030_BCI_BATTERY_MODULE) || \
+	defined(CONFIG_TWL6030_BCI_BATTERY) || \
+	defined(CONFIG_FUEL_GAUGE_TWL6030) || \
+	defined(CONFIG_TWL6030_BCI_BATTERY_MODULE)
+#define twl_has_bci()		true
+#else
+#define twl_has_bci()		false
+#endif
+
 #if defined(CONFIG_KEYBOARD_TWL4030) || defined(CONFIG_KEYBOARD_TWL4030_MODULE)
 #define twl_has_keypad()	true
 #else
@@ -77,7 +87,8 @@
 #define twl_has_regulator()	false
 #endif
 
-#if defined(CONFIG_TWL4030_MADC) || defined(CONFIG_TWL4030_MADC_MODULE)
+#if defined(CONFIG_TWL4030_MADC) || defined(CONFIG_TWL4030_MADC_MODULE) ||\
+    defined(CONFIG_TWL6030_GPADC) || defined(CONFIG_TWL6030_GPADC_MODULE)
 #define twl_has_madc()	true
 #else
 #define twl_has_madc()	false
@@ -95,7 +106,8 @@
 #define twl_has_rtc()	false
 #endif
 
-#if defined(CONFIG_TWL4030_USB) || defined(CONFIG_TWL4030_USB_MODULE)
+#if defined(CONFIG_TWL4030_USB) || defined(CONFIG_TWL4030_USB_MODULE) ||\
+    defined(CONFIG_TWL6030_USB) || defined(CONFIG_TWL6030_USB_MODULE)
 #define twl_has_usb()	true
 #else
 #define twl_has_usb()	false
@@ -109,7 +121,7 @@
 #endif
 
 #if defined(CONFIG_TWL4030_CODEC) || defined(CONFIG_TWL4030_CODEC_MODULE) ||\
-	defined(CONFIG_SND_SOC_TWL6040) || defined(CONFIG_SND_SOC_TWL6040_MODULE)
+	defined(CONFIG_TWL6040_CODEC) || defined(CONFIG_TWL6040_CODEC_MODULE)
 #define twl_has_codec()	true
 #else
 #define twl_has_codec()	false
@@ -118,7 +130,7 @@
 /* Triton Core internal information (BEGIN) */
 
 /* Last - for index max*/
-#define TWL4030_MODULE_LAST		TWL4030_MODULE_SECURED_REG
+#define TWL4030_MODULE_LAST		TWL6030_MODULE_AUX
 
 #define TWL_NUM_SLAVES		4
 
@@ -216,7 +228,6 @@
 #define HIGH_PERF_SQ			(1 << 3)
 #define CK32K_LOWPWR_EN			(1 << 7)
 
-
 /* chip-specific feature flags, for i2c_device_id.driver_data */
 #define TWL4030_VAUX2		BIT(0)	/* pre-5030 voltage ranges */
 #define TPS_SUBSET		BIT(1)	/* tps659[23]0 have fewer LDOs */
@@ -255,7 +266,7 @@ struct twl_mapping {
 	unsigned char sid;	/* Slave ID */
 	unsigned char base;	/* base address */
 };
-struct twl_mapping *twl_map;
+static struct twl_mapping *twl_map;
 
 static struct twl_mapping twl4030_map[TWL4030_MODULE_LAST + 1] = {
 	/*
@@ -327,6 +338,7 @@ static struct twl_mapping twl6030_map[] = {
 
 	{ SUB_CHIP_ID0, TWL6030_BASEADD_RTC },
 	{ SUB_CHIP_ID0, TWL6030_BASEADD_MEM },
+	{ SUB_CHIP_ID1, TWL6030_BASEADD_AUX },
 };
 
 /*----------------------------------------------------------------------*/
@@ -599,11 +611,29 @@ add_children(struct twl4030_platform_data *pdata, unsigned long features)
 		if (IS_ERR(child))
 			return PTR_ERR(child);
 	}
+	if (twl_has_bci() && pdata->bci &&
+	    (features & TWL6030_CLASS)) {
+		child = add_child(1, "twl6030_bci",
+				pdata->bci, sizeof(*pdata->bci),
+				false,
+				pdata->irq_base + CHARGER_INTR_OFFSET,
+				pdata->irq_base + CHARGERFAULT_INTR_OFFSET);
+	}
 
-	if (twl_has_madc() && pdata->madc) {
+
+	if (twl_has_madc() && pdata->madc && twl_class_is_4030()) {
 		child = add_child(2, "twl4030_madc",
 				pdata->madc, sizeof(*pdata->madc),
 				true, pdata->irq_base + MADC_INTR_OFFSET, 0);
+		if (IS_ERR(child))
+			return PTR_ERR(child);
+	}
+
+	if (twl_has_madc() && pdata->madc && twl_class_is_6030()) {
+		child = add_child(1, "twl6030_gpadc",
+				pdata->madc, sizeof(*pdata->madc),
+				true, pdata->irq_base + MADC_INTR_OFFSET,
+				pdata->irq_base + GPADCSW_INTR_OFFSET);
 		if (IS_ERR(child))
 			return PTR_ERR(child);
 	}
@@ -682,6 +712,17 @@ add_children(struct twl4030_platform_data *pdata, unsigned long features)
 			usb3v1.dev = child;
 		}
 	}
+	if (twl_has_usb() && twl_class_is_6030()) {
+		child = add_child(0, "twl6030_usb",
+		pdata->usb, sizeof(*pdata->usb),
+		true,
+		/* irq0 = USB_PRES, irq1 = USB */
+		pdata->irq_base + USBOTG_INTR_OFFSET,
+		pdata->irq_base + USB_PRES_INTR_OFFSET);
+
+	if (IS_ERR(child))
+		return PTR_ERR(child);
+	}
 
 	if (twl_has_watchdog()) {
 		child = add_child(0, "twl4030_wdt", NULL, 0, false, 0, 0);
@@ -698,17 +739,17 @@ add_children(struct twl4030_platform_data *pdata, unsigned long features)
 
 	if (twl_has_codec() && pdata->codec && twl_class_is_4030()) {
 		sub_chip_id = twl_map[TWL_MODULE_AUDIO_VOICE].sid;
-		child = add_child(sub_chip_id, "twl4030_codec",
+		child = add_child(sub_chip_id, "twl4030-audio",
 				pdata->codec, sizeof(*pdata->codec),
 				false, 0, 0);
 		if (IS_ERR(child))
 			return PTR_ERR(child);
 	}
 
-	/* Phoenix*/
+	/* Phoenix codec driver is probed directly atm */
 	if (twl_has_codec() && pdata->codec && twl_class_is_6030()) {
 		sub_chip_id = twl_map[TWL_MODULE_AUDIO_VOICE].sid;
-		child = add_child(sub_chip_id, "twl6040_codec",
+		child = add_child(sub_chip_id, "twl6040_audio",
 				pdata->codec, sizeof(*pdata->codec),
 				false, 0, 0);
 		if (IS_ERR(child))
@@ -924,13 +965,7 @@ static void clocks_init(struct device *dev,
 
 /*----------------------------------------------------------------------*/
 
-int twl4030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end);
-int twl4030_exit_irq(void);
-int twl4030_init_chip_irq(const char *chip);
-int twl6030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end);
-int twl6030_exit_irq(void);
-
-static int twl_remove(struct i2c_client *client)
+static int __devexit twl_remove(struct i2c_client *client)
 {
 	unsigned i;
 	int status;
@@ -955,13 +990,13 @@ static int twl_remove(struct i2c_client *client)
 }
 
 /* NOTE:  this driver only handles a single twl4030/tps659x0 chip */
-static int __init
+static int __devinit
 twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	int				status;
 	unsigned			i;
 	struct twl4030_platform_data	*pdata = client->dev.platform_data;
-	u8 temp;
+	u8 temp = 0;
 
 	if (!pdata) {
 		dev_dbg(&client->dev, "no platform data?\n");
@@ -982,6 +1017,7 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		struct twl_client	*twl = &twl_modules[i];
 
 		twl->address = client->addr + i;
+
 		if (i == 0)
 			twl->client = client;
 		else {
@@ -1009,8 +1045,11 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	clocks_init(&client->dev, pdata->clock);
 
 	/* load power event scripts */
-	if (twl_has_power() && pdata->power)
-		twl4030_power_init(pdata->power);
+	if (twl_has_power()) {
+		twl4030_power_sr_init();
+		 if (pdata->power)
+			twl4030_power_init(pdata->power);
+	}
 
 	/* Maybe init the T2 Interrupt subsystem */
 	if (client->irq
@@ -1042,6 +1081,10 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	}
 
 	status = add_children(pdata, id->driver_data);
+
+	if (twl_class_is_6030())
+		twl6030_power_init();
+
 fail:
 	if (status < 0)
 		twl_remove(client);
@@ -1065,7 +1108,7 @@ static struct i2c_driver twl_driver = {
 	.driver.name	= DRIVER_NAME,
 	.id_table	= twl_ids,
 	.probe		= twl_probe,
-	.remove		= twl_remove,
+	.remove		= __devexit_p(twl_remove),
 };
 
 static int __init twl_init(void)

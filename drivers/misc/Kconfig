@@ -53,6 +53,10 @@ config AD525X_DPOT_SPI
 	  To compile this driver as a module, choose M here: the
 	  module will be called ad525x_dpot-spi.
 
+config ANDROID_PMEM
+	bool "Android pmem allocator"
+	default y
+
 config ATMEL_PWM
 	tristate "Atmel AT32/AT91 PWM support"
 	depends on AVR32 || ARCH_AT91SAM9263 || ARCH_AT91SAM9RL || ARCH_AT91CAP9
@@ -199,6 +203,13 @@ config ENCLOSURE_SERVICES
 	  driver (SCSI/ATA) which supports enclosures
 	  or a SCSI enclosure device (SES) to use these services.
 
+config KERNEL_DEBUGGER_CORE
+	bool "Kernel Debugger Core"
+	default n
+	---help---
+	  Generic kernel debugging command processor used by low level
+	  (interrupt context) platform-specific debuggers.
+
 config SGI_XP
 	tristate "Support communication between SGI SSIs"
 	depends on NET
@@ -304,6 +315,36 @@ config SENSORS_TSL2550
 	  This driver can also be built as a module.  If so, the module
 	  will be called tsl2550.
 
+config TWL6030_POWER_OFF
+	tristate "TWL6030 Power Off"
+	depends on I2C && ARCH_OMAP4
+	help
+	  Say yes here to get the support of turning off or shutting down
+	  the TWL6030 PMIC chip.
+
+config SENSORS_BH1780
+	tristate "ROHM BH1780GLI ambient light sensor"
+	depends on I2C && SYSFS
+	help
+	  If you say yes here you get support for the ROHM BH1780GLI
+	  ambient light sensor.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called bh1780gli.
+
+config SENSORS_AK8975
+	tristate "AK8975 compass support"
+	default n
+	depends on I2C
+	help
+	  If you say yes here you get support for Asahi Kasei's
+	  orientation sensor AK8975.
+
+config TWL6040_VIB
+	bool "TWL6040 Vibrator"
+	depends on TWL6040_CODEC && ANDROID_TIMED_OUTPUT
+	default n
+
 config EP93XX_PWM
 	tristate "EP93xx PWM support"
 	depends on ARCH_EP93XX
@@ -337,6 +378,10 @@ config TI_DAC7512
 	  This driver can also be built as a module. If so, the module
 	  will be calles ti_dac7512.
 
+config UID_STAT
+	bool "UID based statistics tracking exported to /proc/uid_stat"
+	default n
+
 config VMWARE_BALLOON
 	tristate "VMware Balloon Driver"
 	depends on X86
@@ -352,6 +397,67 @@ config VMWARE_BALLOON
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called vmware_balloon.
+
+config BMP085
+	tristate "BMP085 digital pressure sensor"
+	depends on I2C && SYSFS
+	help
+	  If you say yes here you get support for the Bosch Sensortec
+	  BMP086 digital pressure sensor.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bmp085.
+
+config WL127X_RFKILL
+	tristate "Bluetooth power control driver for TI wl127x"
+	depends on RFKILL
+	default n
+	---help---
+	 Creates an rfkill entry in sysfs for power control of Bluetooth
+	 TI wl127x chips.
+
+config APANIC
+	bool "Android kernel panic diagnostics driver"
+	default n
+	---help---
+	 Driver which handles kernel panics and attempts to write
+	 critical debugging data to flash.
+
+config APANIC_PLABEL
+	string "Android panic dump flash partition label"
+	depends on APANIC
+	default "kpanic"
+	---help---
+	 If your platform uses a different flash partition label for storing
+ 	 crashdumps, enter it here.
+
+config LP530AL_GYRO_SENSOR
+	tristate "LP530AL GYRO SENSOR support for smausnf OMAP4 board"
+	depends on ARCH_OMAP4 && SYSFS
+	default n
+	---help---
+	  Provides support for reading LP530AL GYRO SENSOR values through TWL6030 GPADC.
+config PN544_NFC
+        bool "NXP PN554 NFC Controller Driver"
+        default n
+        help
+                NXP PN544 Near Field Communication Controller support.
+
+config INPUT_BMP182
+	bool "BMP182 digital pressure sensor"
+	depends on I2C
+	default n
+	help
+	  If you say yes here you get support for the Bosch Sensortec
+	  BMP182 digital pressure sensor
+
+config OMAP4_DUTY_CYCLE
+	tristate "Control OPP_NITRO usage based on duty cycle strategy"
+	depends on ARCH_OMAP4
+	default n
+	---help---
+ 	 If you are going to use OPP_NITRO with high level of leakage which.
+ 	 could pontentially sustain a thermal runaway, say Y here.
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

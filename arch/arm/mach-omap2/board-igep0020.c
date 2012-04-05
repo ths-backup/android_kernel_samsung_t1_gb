@@ -20,6 +20,7 @@
 
 #include <linux/regulator/machine.h>
 #include <linux/i2c/twl.h>
+#include <linux/mmc/host.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -107,7 +108,7 @@ static struct platform_device igep2_onenand_device = {
 	},
 };
 
-void __init igep2_flash_init(void)
+static void __init igep2_flash_init(void)
 {
 	u8		cs = 0;
 	u8		onenandcs = GPMC_CS_NUM + 1;
@@ -141,7 +142,7 @@ void __init igep2_flash_init(void)
 }
 
 #else
-void __init igep2_flash_init(void) {}
+static void __init igep2_flash_init(void) {}
 #endif
 
 #if defined(CONFIG_SMSC911X) || defined(CONFIG_SMSC911X_MODULE)
@@ -248,13 +249,13 @@ static struct regulator_init_data igep2_vmmc2 = {
 static struct omap2_hsmmc_info mmc[] = {
 	{
 		.mmc		= 1,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 	},
 	{
 		.mmc		= 2,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 	},
@@ -406,7 +407,6 @@ static void __init igep2_init_irq(void)
 	omap_board_config_size = ARRAY_SIZE(igep2_config);
 	omap2_init_common_hw(m65kxxxxam_sdrc_params, m65kxxxxam_sdrc_params);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
 static struct twl4030_codec_audio_data igep2_audio_data = {
@@ -443,11 +443,11 @@ static struct i2c_board_info __initdata igep2_i2c_boardinfo[] = {
 
 static int __init igep2_i2c_init(void)
 {
-	omap_register_i2c_bus(1, 2600, igep2_i2c_boardinfo,
+	omap_register_i2c_bus(1, 2600, NULL, igep2_i2c_boardinfo,
 			ARRAY_SIZE(igep2_i2c_boardinfo));
 	/* Bus 3 is attached to the DVI port where devices like the pico DLP
 	 * projector don't work reliably with 400kHz */
-	omap_register_i2c_bus(3, 100, NULL, 0);
+	omap_register_i2c_bus(3, 100, NULL, NULL, 0);
 	return 0;
 }
 
@@ -457,10 +457,10 @@ static struct omap_musb_board_data musb_board_data = {
 	.power			= 100,
 };
 
-static const struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_PHY,
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_UNKNOWN,
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+static const struct usbhs_omap_platform_data usbhs_pdata __initconst = {
+	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
+	.port_mode[1] = OMAP_USBHS_PORT_MODE_UNUSED,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset = true,
 	.reset_gpio_port[0] = IGEP2_GPIO_USBH_NRESET,
@@ -483,7 +483,7 @@ static void __init igep2_init(void)
 	platform_add_devices(igep2_devices, ARRAY_SIZE(igep2_devices));
 	omap_serial_init();
 	usb_musb_init(&musb_board_data);
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
 
 	igep2_flash_init();
 	igep2_init_led();

@@ -17,6 +17,10 @@
 extern void voiceblue_reset(void);
 #endif
 
+#if defined (CONFIG_MACH_OMAP_SAMSUNG)
+#include <mach/sec_common.h>
+#endif /* CONFIG_MACH_OMAP_SAMSUNG */
+
 static inline void arch_idle(void)
 {
 	cpu_do_idle();
@@ -42,6 +46,9 @@ static inline void omap1_arch_reset(char mode, const char *cmd)
 
 static inline void arch_reset(char mode, const char *cmd)
 {
+#if defined (CONFIG_MACH_OMAP_SAMSUNG)
+	mode = (char)sec_common_update_reboot_reason(mode, cmd);
+#endif /* CONFIG_MACH_OMAP_SAMSUNG */
 	if (!cpu_class_is_omap2())
 		omap1_arch_reset(mode, cmd);
 	else

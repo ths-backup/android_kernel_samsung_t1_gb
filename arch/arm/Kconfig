@@ -55,7 +55,7 @@ config GENERIC_CLOCKEVENTS
 config GENERIC_CLOCKEVENTS_BROADCAST
 	bool
 	depends on GENERIC_CLOCKEVENTS
-	default y if SMP && !LOCAL_TIMERS
+	default y if SMP
 
 config HAVE_TCM
 	bool
@@ -188,6 +188,9 @@ config VECTORS_BASE
 	default 0x00000000
 	help
 	  The base address of exception vectors.
+
+config ARCH_HAS_CPU_IDLE_WAIT
+	def_bool y
 
 source "init/Kconfig"
 
@@ -1184,7 +1187,7 @@ config HOTPLUG_CPU
 config LOCAL_TIMERS
 	bool "Use local timer interrupts"
 	depends on SMP && (REALVIEW_EB_ARM11MP || MACH_REALVIEW_PB11MP || \
-		REALVIEW_EB_A9MP || MACH_REALVIEW_PBX || ARCH_OMAP4 || ARCH_U8500)
+		REALVIEW_EB_A9MP || MACH_REALVIEW_PBX || ARCH_OMAP4 || ARCH_U8500) && !OMAP4_ES1
 	default y
 	select HAVE_ARM_TWD if (ARCH_REALVIEW || ARCH_OMAP4 || ARCH_U8500)
 	help
@@ -1682,6 +1685,10 @@ source "net/Kconfig"
 source "drivers/Kconfig"
 
 source "fs/Kconfig"
+
+## [[BEGIN>>> OMAP-Samsung Specific Configurations
+source "samsung/Kconfig"
+## OMAP-Samsung Specific Configurations <<<END]]
 
 source "arch/arm/Kconfig.debug"
 

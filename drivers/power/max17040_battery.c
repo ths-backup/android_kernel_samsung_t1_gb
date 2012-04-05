@@ -53,6 +53,8 @@ struct max17040_chip {
 	int status;
 };
 
+struct i2c_client *max17040_client;
+
 static int max17040_get_property(struct power_supply *psy,
 			    enum power_supply_property psp,
 			    union power_supply_propval *val)
@@ -119,6 +121,22 @@ static void max17040_get_vcell(struct i2c_client *client)
 	lsb = max17040_read_reg(client, MAX17040_VCELL_LSB);
 
 	chip->vcell = (msb << 4) + (lsb >> 4);
+}
+
+int read_max17040_vcell(void)
+{
+	struct max17040_chip *chip = i2c_get_clientdata(max17040_client);
+	int result = 0;
+	u8 msb;
+	u8 lsb;
+
+	msb = max17040_read_reg(max17040_client, MAX17040_VCELL_MSB);
+	lsb = max17040_read_reg(max17040_client, MAX17040_VCELL_LSB);
+
+	chip->vcell = (msb << 4) + (lsb >> 4);
+
+	result = chip->vcell;
+	return result;
 }
 
 static void max17040_get_soc(struct i2c_client *client)
@@ -212,6 +230,7 @@ static int __devinit max17040_probe(struct i2c_client *client,
 		return -ENOMEM;
 
 	chip->client = client;
+	max17040_client = client;
 	chip->pdata = client->dev.platform_data;
 
 	i2c_set_clientdata(client, chip);
@@ -232,8 +251,10 @@ static int __devinit max17040_probe(struct i2c_client *client,
 	max17040_reset(client);
 	max17040_get_version(client);
 
-	INIT_DELAYED_WORK_DEFERRABLE(&chip->work, max17040_work);
-	schedule_delayed_work(&chip->work, MAX17040_DELAY);
+	/* Disabled this work queue because we are reading the updated
+	   voltage value from TWL6030 battery driver */
+	//INIT_DELAYED_WORK_DEFERRABLE(&chip->work, max17040_work);
+	//schedule_delayed_work(&chip->work, MAX17040_DELAY);
 
 	return 0;
 }
@@ -255,7 +276,7 @@ static int max17040_suspend(struct i2c_client *client,
 {
 	struct max17040_chip *chip = i2c_get_clientdata(client);
 
-	cancel_delayed_work(&chip->work);
+	//cancel_delayed_work(&chip->work);
 	return 0;
 }
 
@@ -263,7 +284,7 @@ static int max17040_resume(struct i2c_client *client)
 {
 	struct max17040_chip *chip = i2c_get_clientdata(client);
 
-	schedule_delayed_work(&chip->work, MAX17040_DELAY);
+	//schedule_delayed_work(&chip->work, MAX17040_DELAY);
 	return 0;
 }
 

@@ -41,6 +41,7 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/list.h>
+#include <linux/dma-mapping.h>
 
 #include "musb_core.h"
 #include "musb_host.h"
@@ -108,7 +109,7 @@ static void musb_h_tx_flush_fifo(struct musb_hw_ep *ep)
 	void __iomem	*epio = ep->regs;
 	u16		csr;
 	u16		lastcsr = 0;
-	int		retries = 1000;
+	int		retries = 2000;
 
 	csr = musb_readw(epio, MUSB_TXCSR);
 	while (csr & MUSB_TXCSR_FIFONOTEMPTY) {
@@ -628,6 +629,11 @@ static bool musb_tx_dma_program(struct dma_controller *dma,
 	u8			mode;
 
 #ifdef	CONFIG_USB_INVENTRA_DMA
+	/*
+	 * Ensure the data reaches to main memory before starting
+	 * DMA transfer
+	 */
+	wmb();
 	if (length > channel->max_len)
 		length = channel->max_len;
 
@@ -1113,6 +1119,7 @@ void musb_host_tx(struct musb *musb, u8 epnum)
 	u32			status = 0;
 	void __iomem		*mbase = musb->mregs;
 	struct dma_channel	*dma;
+	bool			transfer_pending = false;
 
 	musb_ep_select(mbase, epnum);
 	tx_csr = musb_readw(epio, MUSB_TXCSR);
@@ -1273,7 +1280,7 @@ void musb_host_tx(struct musb *musb, u8 epnum)
 				offset = d->offset;
 				length = d->length;
 			}
-		} else if (dma) {
+		} else if (dma && (urb->transfer_buffer_length == qh->offset)) {
 			done = true;
 		} else {
 			/* see if we need to send more data, or ZLP */
@@ -1286,6 +1293,7 @@ void musb_host_tx(struct musb *musb, u8 epnum)
 			if (!done) {
 				offset = qh->offset;
 				length = urb->transfer_buffer_length - offset;
+				transfer_pending = true;
 			}
 		}
 	}
@@ -1305,7 +1313,11 @@ void musb_host_tx(struct musb *musb, u8 epnum)
 		urb->actual_length = qh->offset;
 		musb_advance_schedule(musb, urb, hw_ep, USB_DIR_OUT);
 		return;
-	} else	if (usb_pipeisoc(pipe) && dma) {
+	} else if (transfer_pending && dma) {
+		if (musb_tx_dma_program(musb->dma_controller, hw_ep, qh, urb,
+				offset, length))
+			return;
+	} else if (usb_pipeisoc(pipe) && dma) {
 		if (musb_tx_dma_program(musb->dma_controller, hw_ep, qh, urb,
 				offset, length)) {
 			if (is_cppi_enabled() || tusb_dma_omap())
@@ -1326,6 +1338,8 @@ void musb_host_tx(struct musb *musb, u8 epnum)
 	 */
 	if (length > qh->maxpacket)
 		length = qh->maxpacket;
+	/* Unmap the buffer so that CPU can use it */
+	unmap_urb_for_dma(musb_to_hcd(musb), urb);
 	musb_write_fifo(hw_ep, length, urb->transfer_buffer + offset);
 	qh->segsize = length;
 
@@ -1746,6 +1760,8 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 #endif	/* Mentor DMA */
 
 		if (!dma) {
+			/* Unmap the buffer so that CPU can use it */
+			unmap_urb_for_dma(musb_to_hcd(musb), urb);
 			done = musb_host_packet_rx(musb, urb,
 					epnum, iso_err);
 			DBG(6, "read %spacket\n", done ? "last " : "");
@@ -1772,13 +1788,13 @@ static int musb_schedule(
 	struct musb_qh		*qh,
 	int			is_in)
 {
-	int			idle;
-	int			best_diff;
-	int			best_end, epnum;
+	int			idle = 0;
+	int			best_diff = 0;
+	int			best_end = 0, epnum = 0;
 	struct musb_hw_ep	*hw_ep = NULL;
 	struct list_head	*head = NULL;
-	u8			toggle;
-	u8			txtype;
+	u8			toggle = 0;
+	u8			txtype = 0;
 	struct urb		*urb = next_urb(qh);
 
 	/* use fixed hardware for control and bulk */
@@ -2308,6 +2324,7 @@ const struct hc_driver musb_hc_driver = {
 	.description		= "musb-hcd",
 	.product_desc		= "MUSB HDRC host driver",
 	.hcd_priv_size		= sizeof(struct musb),
+	.dma_align_shift	= 2,
 	.flags			= HCD_USB2 | HCD_MEMORY,
 
 	/* not using irq handler or reset hooks from usbcore, since

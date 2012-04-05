@@ -50,6 +50,11 @@ struct mmc_ios {
 #define MMC_TIMING_LEGACY	0
 #define MMC_TIMING_MMC_HS	1
 #define MMC_TIMING_SD_HS	2
+
+	unsigned char	ddr;			/* dual data rate used */
+
+#define MMC_SDR_MODE		0
+#define MMC_DDR_MODE		1
 };
 
 struct mmc_host_ops {
@@ -156,6 +161,13 @@ struct mmc_host {
 #define MMC_CAP_DISABLE		(1 << 7)	/* Can the host be disabled */
 #define MMC_CAP_NONREMOVABLE	(1 << 8)	/* Nonremovable e.g. eMMC */
 #define MMC_CAP_WAIT_WHILE_BUSY	(1 << 9)	/* Waits while card is busy */
+#define MMC_CAP_ERASE		(1 << 10)	/* Allow erase/trim commands */
+#define MMC_CAP_1_8V_DDR	(1 << 11)	/* can support */
+						/* DDR mode at 1.8V */
+#define MMC_CAP_1_2V_DDR	(1 << 12)	/* can support */
+						/* DDR mode at 1.2V */
+#define MMC_CAP_POWER_OFF_CARD	(1 << 13)	/* Can power off after boot */
+
 
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
@@ -201,6 +213,10 @@ struct mmc_host {
 	const struct mmc_bus_ops *bus_ops;	/* current bus driver */
 	unsigned int		bus_refs;	/* reference counter */
 
+	unsigned int		bus_resume_flags;
+#define MMC_BUSRESUME_MANUAL_RESUME	(1 << 0)
+#define MMC_BUSRESUME_NEEDS_RESUME	(1 << 1)
+
 	unsigned int		sdio_irqs;
 	struct task_struct	*sdio_irq_thread;
 	atomic_t		sdio_irq_thread_abort;
@@ -213,6 +229,18 @@ struct mmc_host {
 
 	struct dentry		*debugfs_root;
 
+#ifdef CONFIG_TIWLAN_SDIO
+	struct {
+		struct sdio_cis         *cis;
+		struct sdio_cccr	*cccr;
+		struct sdio_embedded_func   *funcs;
+		unsigned int quirks;    /* embedded sdio card quirks */
+#define MMC_QUIRK_VDD_165_195  (1<<0)  /* do not ignore MMC_VDD_165_195 */
+#define MMC_QUIRK_LENIENT_FUNC0  (1<<1)
+	/* allow SDIO FN0 writes outside of VS CCCR */
+	} embedded_sdio_data;
+#endif
+
 	unsigned long		private[0] ____cacheline_aligned;
 };
 
@@ -220,6 +248,14 @@ extern struct mmc_host *mmc_alloc_host(int extra, struct device *);
 extern int mmc_add_host(struct mmc_host *);
 extern void mmc_remove_host(struct mmc_host *);
 extern void mmc_free_host(struct mmc_host *);
+
+#ifdef CONFIG_TIWLAN_SDIO
+extern void mmc_set_embedded_sdio_data(struct mmc_host *host,
+       struct sdio_cis *cis,
+	struct sdio_cccr *cccr,
+       struct sdio_embedded_func *funcs,
+	unsigned int quirks);
+#endif
 
 static inline void *mmc_priv(struct mmc_host *host)
 {
@@ -231,12 +267,24 @@ static inline void *mmc_priv(struct mmc_host *host)
 #define mmc_dev(x)	((x)->parent)
 #define mmc_classdev(x)	(&(x)->class_dev)
 #define mmc_hostname(x)	(dev_name(&(x)->class_dev))
+#define mmc_bus_needs_resume(host) ((host)->bus_resume_flags & MMC_BUSRESUME_NEEDS_RESUME)
+#define mmc_bus_manual_resume(host) ((host)->bus_resume_flags & MMC_BUSRESUME_MANUAL_RESUME)
+
+static inline void mmc_set_bus_resume_policy(struct mmc_host *host, int manual)
+{
+	if (manual)
+		host->bus_resume_flags |= MMC_BUSRESUME_MANUAL_RESUME;
+	else
+		host->bus_resume_flags &= ~MMC_BUSRESUME_MANUAL_RESUME;
+}
+
+extern int mmc_resume_bus(struct mmc_host *host);
 
 extern int mmc_suspend_host(struct mmc_host *);
 extern int mmc_resume_host(struct mmc_host *);
 
-extern void mmc_power_save_host(struct mmc_host *host);
-extern void mmc_power_restore_host(struct mmc_host *host);
+extern int mmc_power_save_host(struct mmc_host *host);
+extern int mmc_power_restore_host(struct mmc_host *host);
 
 extern void mmc_detect_change(struct mmc_host *, unsigned long delay);
 extern void mmc_request_done(struct mmc_host *, struct mmc_request *);
@@ -265,6 +313,19 @@ static inline void mmc_set_disable_delay(struct mmc_host *host,
 					 unsigned int disable_delay)
 {
 	host->disable_delay = disable_delay;
+}
+
+/* Module parameter */
+extern int mmc_assume_removable;
+
+static inline int mmc_card_is_removable(struct mmc_host *host)
+{
+	return !(host->caps & MMC_CAP_NONREMOVABLE) && mmc_assume_removable;
+}
+
+static inline int mmc_card_is_powered_resumed(struct mmc_host *host)
+{
+	return host->pm_flags & MMC_PM_KEEP_POWER;
 }
 
 #endif

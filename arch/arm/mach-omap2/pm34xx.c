@@ -38,7 +38,7 @@
 #include <plat/prcm.h>
 #include <plat/gpmc.h>
 #include <plat/dma.h>
-#include <plat/dmtimer.h>
+#include <plat/usb.h>
 
 #include <asm/tlbflush.h>
 
@@ -51,14 +51,9 @@
 #include "sdrc.h"
 
 /* Scratchpad offsets */
-#define OMAP343X_TABLE_ADDRESS_OFFSET	   0x31
-#define OMAP343X_TABLE_VALUE_OFFSET	   0x30
-#define OMAP343X_CONTROL_REG_VALUE_OFFSET  0x32
-
-u32 enable_off_mode;
-u32 sleep_while_idle;
-u32 wakeup_timer_seconds;
-u32 wakeup_timer_milliseconds;
+#define OMAP343X_TABLE_ADDRESS_OFFSET	   0xC4
+#define OMAP343X_TABLE_VALUE_OFFSET	   0xC0
+#define OMAP343X_CONTROL_REG_VALUE_OFFSET  0xC8
 
 struct power_state {
 	struct powerdomain *pwrdm;
@@ -78,16 +73,6 @@ static int (*_omap_save_secure_sram)(u32 *addr);
 static struct powerdomain *mpu_pwrdm, *neon_pwrdm;
 static struct powerdomain *core_pwrdm, *per_pwrdm;
 static struct powerdomain *cam_pwrdm;
-
-static inline void omap3_per_save_context(void)
-{
-	omap_gpio_save_context();
-}
-
-static inline void omap3_per_restore_context(void)
-{
-	omap_gpio_restore_context();
-}
 
 static void omap3_enable_io_chain(void)
 {
@@ -146,7 +131,6 @@ static void omap3_core_save_context(void)
 	omap3_gpmc_save_context();
 	/* Save the system control module context, padconf already save above*/
 	omap3_control_save_context();
-	omap_dma_global_context_save();
 }
 
 static void omap3_core_restore_context(void)
@@ -157,7 +141,6 @@ static void omap3_core_restore_context(void)
 	omap3_gpmc_restore_context();
 	/* Restore the interrupt controller context */
 	omap_intc_restore_context();
-	omap_dma_global_context_restore();
 }
 
 /*
@@ -240,6 +223,15 @@ static int _prcm_int_handle_wakeup(void)
 {
 	int c;
 
+	/* By OMAP3630ES1.x and OMAP3430ES3.1 TRM, S/W must clear
+	 * the EN_IO and EN_IO_CHAIN bits of WKEN_WKUP. Those bits
+	 * would be set again by S/W in sleep sequences.
+	 */
+	if (omap_rev() >= OMAP3430_REV_ES3_1)
+		prm_clear_mod_reg_bits(OMAP3430_EN_IO_MASK |
+				       OMAP3430_EN_IO_CHAIN_MASK,
+				       WKUP_MOD, PM_WKEN);
+
 	c = prcm_clear_mod_irqs(WKUP_MOD, 1);
 	c += prcm_clear_mod_irqs(CORE_MOD, 1);
 	c += prcm_clear_mod_irqs(OMAP3430_PER_MOD, 1);
@@ -316,7 +308,7 @@ static void restore_control_register(u32 val)
 /* Function to restore the table entry that was modified for enabling MMU */
 static void restore_table_entry(void)
 {
-	u32 *scratchpad_address;
+	void __iomem *scratchpad_address;
 	u32 previous_value, control_reg_value;
 	u32 *address;
 
@@ -394,15 +386,17 @@ void omap_sram_idle(void)
 	/* PER */
 	if (per_next_state < PWRDM_POWER_ON) {
 		omap_uart_prepare_idle(2);
-		omap2_gpio_prepare_for_idle(per_next_state);
 		if (per_next_state == PWRDM_POWER_OFF) {
 			if (core_next_state == PWRDM_POWER_ON) {
 				per_next_state = PWRDM_POWER_RET;
 				pwrdm_set_next_pwrst(per_pwrdm, per_next_state);
 				per_state_modified = 1;
-			} else
-				omap3_per_save_context();
+			}
 		}
+		if (per_next_state == PWRDM_POWER_OFF)
+			omap2_gpio_prepare_for_idle(true);
+		else
+			omap2_gpio_prepare_for_idle(false);
 	}
 
 	if (pwrdm_read_pwrst(cam_pwrdm) == PWRDM_POWER_ON)
@@ -415,6 +409,10 @@ void omap_sram_idle(void)
 		if (core_next_state == PWRDM_POWER_OFF) {
 			omap3_core_save_context();
 			omap3_prcm_save_context();
+			/* Save MUSB context */
+			musb_context_save_restore(save_context);
+		} else {
+			musb_context_save_restore(disable_clk);
 		}
 	}
 
@@ -457,6 +455,10 @@ void omap_sram_idle(void)
 			omap3_prcm_restore_context();
 			omap3_sram_restore_context();
 			omap2_sms_restore_context();
+			/* Restore MUSB context */
+			musb_context_save_restore(restore_context);
+		} else {
+			musb_context_save_restore(enable_clk);
 		}
 		omap_uart_resume_idle(0);
 		omap_uart_resume_idle(1);
@@ -470,9 +472,10 @@ void omap_sram_idle(void)
 	/* PER */
 	if (per_next_state < PWRDM_POWER_ON) {
 		per_prev_state = pwrdm_read_prev_pwrst(per_pwrdm);
-		omap2_gpio_resume_after_idle();
 		if (per_prev_state == PWRDM_POWER_OFF)
-			omap3_per_restore_context();
+			omap2_gpio_resume_after_idle(true);
+		else
+			omap2_gpio_resume_after_idle(false);
 		omap_uart_resume_idle(2);
 		if (per_state_modified)
 			pwrdm_set_next_pwrst(per_pwrdm, PWRDM_POWER_OFF);
@@ -563,23 +566,6 @@ out:
 
 #ifdef CONFIG_SUSPEND
 static suspend_state_t suspend_state;
-
-static void omap2_pm_wakeup_on_timer(u32 seconds, u32 milliseconds)
-{
-	u32 tick_rate, cycles;
-
-	if (!seconds && !milliseconds)
-		return;
-
-	tick_rate = clk_get_rate(omap_dm_timer_get_fclk(gptimer_wakeup));
-	cycles = tick_rate * seconds + tick_rate * milliseconds / 1000;
-	omap_dm_timer_stop(gptimer_wakeup);
-	omap_dm_timer_set_load_start(gptimer_wakeup, 0, 0xffffffff - cycles);
-
-	pr_info("PM: Resume timer in %u.%03u secs"
-		" (%d ticks at %d ticks/sec.)\n",
-		seconds, milliseconds, cycles, tick_rate);
-}
 
 static int omap3_pm_prepare(void)
 {
@@ -896,10 +882,14 @@ static void __init prcm_setup_regs(void)
 			     OMAP3430_GR_MOD,
 			     OMAP3_PRM_CLKSRC_CTRL_OFFSET);
 
-	/* setup wakup source */
-	prm_write_mod_reg(OMAP3430_EN_IO_MASK | OMAP3430_EN_GPIO1_MASK |
-			  OMAP3430_EN_GPT1_MASK | OMAP3430_EN_GPT12_MASK,
-			  WKUP_MOD, PM_WKEN);
+	/* setup wakup source:
+	 *  By OMAP3630ES1.x and OMAP3430ES3.1 TRM, S/W must take care
+	 *  the EN_IO and EN_IO_CHAIN bits in sleep-wakeup sequences.
+	 */
+	prm_write_mod_reg(OMAP3430_EN_GPIO1_MASK | OMAP3430_EN_GPT1_MASK |
+			  OMAP3430_EN_GPT12_MASK, WKUP_MOD, PM_WKEN);
+	if (omap_rev() < OMAP3430_REV_ES3_1)
+		prm_set_mod_reg_bits(OMAP3430_EN_IO_MASK, WKUP_MOD, PM_WKEN);
 	/* No need to write EN_IO, that is always enabled */
 	prm_write_mod_reg(OMAP3430_GRPSEL_GPIO1_MASK |
 			  OMAP3430_GRPSEL_GPT1_MASK |
@@ -1113,9 +1103,9 @@ static int __init omap3_pm_init(void)
 		local_irq_disable();
 		local_fiq_disable();
 
-		omap_dma_global_context_save();
+		omap2_dma_context_save();
 		omap3_save_secure_ram_context(PWRDM_POWER_ON);
-		omap_dma_global_context_restore();
+		omap2_dma_context_restore();
 
 		local_irq_enable();
 		local_fiq_enable();

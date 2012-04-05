@@ -23,6 +23,7 @@
 #include <linux/gpio.h>
 #include <linux/gpio_keys.h>
 #include <linux/mmc/host.h>
+#include <sound/tlv320aic3x.h>
 
 #include <plat/mcspi.h>
 #include <plat/mux.h>
@@ -32,6 +33,8 @@
 #include <plat/gpmc.h>
 #include <plat/onenand.h>
 #include <plat/gpmc-smc91x.h>
+
+#include <mach/board-rx51.h>
 
 #include "mux.h"
 #include "hsmmc.h"
@@ -292,7 +295,7 @@ static struct omap2_hsmmc_info mmc[] __initdata = {
 	{
 		.name		= "external",
 		.mmc		= 1,
-		.wires		= 4,
+		.caps		= MMC_CAP_4_BIT_DATA,
 		.cover_only	= true,
 		.gpio_cd	= 160,
 		.gpio_wp	= -EINVAL,
@@ -301,7 +304,8 @@ static struct omap2_hsmmc_info mmc[] __initdata = {
 	{
 		.name		= "internal",
 		.mmc		= 2,
-		.wires		= 8, /* See also rx51_mmc2_remux */
+		.caps		= MMC_CAP_4_BIT_DATA | MMC_CAP_8_BIT_DATA,
+						/* See also rx51_mmc2_remux */
 		.gpio_cd	= -EINVAL,
 		.gpio_wp	= -EINVAL,
 		.nonremovable	= true,
@@ -697,7 +701,6 @@ static struct twl4030_power_data rx51_t2scripts_data __initdata = {
 };
 
 
-
 static struct twl4030_platform_data rx51_twldata __initdata = {
 	.irq_base		= TWL4030_IRQ_BASE,
 	.irq_end		= TWL4030_IRQ_END,
@@ -727,9 +730,21 @@ static struct i2c_board_info __initdata rx51_peripherals_i2c_board_info_1[] = {
 	},
 };
 
+/* Audio setup data */
+static struct aic3x_setup_data rx51_aic34_setup = {
+	.gpio_func[0] = AIC3X_GPIO1_FUNC_DISABLED,
+	.gpio_func[1] = AIC3X_GPIO2_FUNC_DIGITAL_MIC_INPUT,
+};
+
+static struct aic3x_pdata rx51_aic34_data = {
+	.setup = &rx51_aic34_setup,
+	.gpio_reset = 60,
+};
+
 static struct i2c_board_info __initdata rx51_peripherals_i2c_board_info_2[] = {
 	{
 		I2C_BOARD_INFO("tlv320aic3x", 0x18),
+		.platform_data = &rx51_aic34_data,
 	},
 };
 
@@ -744,11 +759,11 @@ static int __init rx51_i2c_init(void)
 		rx51_twldata.vaux3 = &rx51_vaux3_cam;
 	}
 	rx51_twldata.vmmc2 = &rx51_vmmc2;
-	omap_register_i2c_bus(1, 2200, rx51_peripherals_i2c_board_info_1,
+	omap_register_i2c_bus(1, 2200, NULL, rx51_peripherals_i2c_board_info_1,
 			      ARRAY_SIZE(rx51_peripherals_i2c_board_info_1));
-	omap_register_i2c_bus(2, 100, rx51_peripherals_i2c_board_info_2,
+	omap_register_i2c_bus(2, 100, NULL, rx51_peripherals_i2c_board_info_2,
 			      ARRAY_SIZE(rx51_peripherals_i2c_board_info_2));
-	omap_register_i2c_bus(3, 400, NULL, 0);
+	omap_register_i2c_bus(3, 400, NULL, NULL, 0);
 	return 0;
 }
 

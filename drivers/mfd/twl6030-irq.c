@@ -36,6 +36,7 @@
 #include <linux/irq.h>
 #include <linux/kthread.h>
 #include <linux/i2c/twl.h>
+#include <linux/platform_device.h>
 
 /*
  * TWL6030 (unlike its predecessors, which had two level interrupt handling)
@@ -65,16 +66,16 @@ static int twl6030_interrupt_mapping[24] = {
 	MMCDETECT_INTR_OFFSET,	/* Bit 11	MMC			*/
 	RSV_INTR_OFFSET,  	/* Bit 12	Reserved		*/
 	MADC_INTR_OFFSET,	/* Bit 13	GPADC_RT_EOC		*/
-	MADC_INTR_OFFSET,	/* Bit 14	GPADC_SW_EOC		*/
+	GPADCSW_INTR_OFFSET,	/* Bit 14	GPADC_SW_EOC		*/
 	GASGAUGE_INTR_OFFSET,	/* Bit 15	CC_AUTOCAL		*/
 
 	USBOTG_INTR_OFFSET,	/* Bit 16	ID_WKUP			*/
 	USBOTG_INTR_OFFSET,	/* Bit 17	VBUS_WKUP		*/
 	USBOTG_INTR_OFFSET,	/* Bit 18	ID			*/
-	USBOTG_INTR_OFFSET,	/* Bit 19	VBUS			*/
+	USB_PRES_INTR_OFFSET,	/* Bit 19	VBUS			*/
 	CHARGER_INTR_OFFSET,	/* Bit 20	CHRG_CTRL		*/
 	CHARGER_INTR_OFFSET,	/* Bit 21	EXT_CHRG		*/
-	CHARGER_INTR_OFFSET,	/* Bit 22	INT_CHRG		*/
+	CHARGERFAULT_INTR_OFFSET,/* Bit 22	INT_CHRG		*/
 	RSV_INTR_OFFSET,	/* Bit 23	Reserved		*/
 };
 /*----------------------------------------------------------------------*/
@@ -97,6 +98,7 @@ static int twl6030_irq_thread(void *data)
 
 	while (!kthread_should_stop()) {
 		int i;
+		int start_time = 0;
 		union {
 		u8 bytes[4];
 		u32 int_sts;
@@ -125,6 +127,13 @@ static int twl6030_irq_thread(void *data)
 
 		sts.bytes[3] = 0; /* Only 24 bits are valid*/
 
+		/*
+		 * Since VBUS status bit is not reliable for VBUS disconnect
+		 * use CHARGER VBUS detection status bit instead.
+		 */
+		if (sts.bytes[2] & 0x10)
+			sts.bytes[2] |= 0x08;
+
 		for (i = 0; sts.int_sts; sts.int_sts >>= 1, i++) {
 			local_irq_disable();
 			if (sts.int_sts & 0x1) {
@@ -138,12 +147,25 @@ static int twl6030_irq_thread(void *data)
 					return -EINVAL;
 				}
 
+				/* this may be a wakeup event
+				 * d->status flag's are masked while we are
+				 * waking up, give some time for the
+				 * IRQ to be enabled.
+				 */
+				start_time = jiffies;
+				while ((d->status & IRQ_DISABLED) &&
+				       (jiffies_to_msecs(jiffies-start_time) < 100)) {
+					yield();
+				}
+
 				/* These can't be masked ... always warn
 				 * if we get any surprises.
 				 */
-				if (d->status & IRQ_DISABLED)
+				if (d->status & IRQ_DISABLED) {
+					pr_warning("twl handler not called, irq is disabled!\n");
 					note_interrupt(module_irq, d,
 							IRQ_NONE);
+				}
 				else
 					d->handle_irq(module_irq, d);
 
@@ -199,8 +221,8 @@ static unsigned twl6030_irq_next;
 /*----------------------------------------------------------------------*/
 int twl6030_interrupt_unmask(u8 bit_mask, u8 offset)
 {
-	int ret;
-	u8 unmask_value;
+	int ret = 0;
+	u8 unmask_value = 0;
 	ret = twl_i2c_read_u8(TWL_MODULE_PIH, &unmask_value,
 			REG_INT_STS_A + offset);
 	unmask_value &= (~(bit_mask));
@@ -212,8 +234,8 @@ EXPORT_SYMBOL(twl6030_interrupt_unmask);
 
 int twl6030_interrupt_mask(u8 bit_mask, u8 offset)
 {
-	int ret;
-	u8 mask_value;
+	int ret = 0;
+	u8 mask_value = 0;
 	ret = twl_i2c_read_u8(TWL_MODULE_PIH, &mask_value,
 			REG_INT_STS_A + offset);
 	mask_value |= (bit_mask);
@@ -222,6 +244,81 @@ int twl6030_interrupt_mask(u8 bit_mask, u8 offset)
 	return ret;
 }
 EXPORT_SYMBOL(twl6030_interrupt_mask);
+
+int twl6030_mmc_card_detect_config(void)
+{
+	int ret;
+	u8 reg_val = 0;
+
+	/* Unmasking the Card detect Interrupt line for MMC1 from Phoenix */
+	if (twl_class_is_6030()) {
+		twl6030_interrupt_unmask(TWL6030_MMCDETECT_INT_MASK,
+							REG_INT_MSK_LINE_B);
+		twl6030_interrupt_unmask(TWL6030_MMCDETECT_INT_MASK,
+							REG_INT_MSK_STS_B);
+	}
+
+	/*
+	 * Intially Configuring MMC_CTRL for receving interrupts &
+	 * Card status on TWL6030 for MMC1
+	 */
+	ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &reg_val, TWL6030_MMCCTRL);
+	if (ret < 0) {
+		pr_err("twl6030: Failed to read MMCCTRL, error %d\n", ret);
+		return ret;
+	}
+	reg_val &= ~VMMC_AUTO_OFF;
+	reg_val |= SW_FC;
+	ret = twl_i2c_write_u8(TWL6030_MODULE_ID0, reg_val, TWL6030_MMCCTRL);
+	if (ret < 0) {
+		return ret;
+		pr_err("twl6030: Failed to write MMCCTRL, error %d\n", ret);
+	}
+
+	/* Configuring PullUp-PullDown register */
+	ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &reg_val,
+						TWL6030_CFG_INPUT_PUPD3);
+	if (ret < 0) {
+		return ret;
+		pr_err("twl6030: Failed to read CFG_INPUT_PUPD3, error %d\n",
+									ret);
+	}
+	reg_val &= ~(MMC_PU | MMC_PD);
+	ret = twl_i2c_write_u8(TWL6030_MODULE_ID0, reg_val,
+						TWL6030_CFG_INPUT_PUPD3);
+	if (ret < 0) {
+		pr_err("twl6030: Failed to write CFG_INPUT_PUPD3, error %d\n",
+									ret);
+		return ret;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(twl6030_mmc_card_detect_config);
+
+int twl6030_mmc_card_detect(struct device *dev, int slot)
+{
+	int ret = -EIO;
+	u8 read_reg = 0;
+	struct platform_device *pdev = container_of(dev,
+					struct platform_device, dev);
+
+	switch (pdev->id) {
+	case 0:
+		/*
+		 * BIT0 of REG_MMC_CTRL
+		 * 0 - Card not present ,1 - Card present
+		 */
+		ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &read_reg,
+							TWL6030_MMCCTRL);
+		if (ret >= 0)
+			ret = read_reg & STS_MMC;
+		break;
+	default:
+		pr_err("Unkown MMC controller %d in %s\n", pdev->id, __func__);
+	}
+	return ret;
+}
+EXPORT_SYMBOL(twl6030_mmc_card_detect);
 
 int twl6030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end)
 {

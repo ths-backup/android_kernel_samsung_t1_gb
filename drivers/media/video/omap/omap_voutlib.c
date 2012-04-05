@@ -60,10 +60,9 @@ int omap_vout_try_window(struct v4l2_framebuffer *fbuf,
 			struct v4l2_window *new_win)
 {
 	struct v4l2_rect try_win;
-
-	/* make a working copy of the new_win rectangle */
+	
 	try_win = new_win->w;
-
+	
 	/* adjust the preview window so it fits on the display by clipping any
 	 * offscreen areas
 	 */
@@ -79,10 +78,13 @@ int omap_vout_try_window(struct v4l2_framebuffer *fbuf,
 		try_win.width : fbuf->fmt.width;
 	try_win.height = (try_win.height < fbuf->fmt.height) ?
 		try_win.height : fbuf->fmt.height;
-	if (try_win.left + try_win.width > fbuf->fmt.width)
-		try_win.width = fbuf->fmt.width - try_win.left;
+
+
 	if (try_win.top + try_win.height > fbuf->fmt.height)
-		try_win.height = fbuf->fmt.height - try_win.top;
+               	try_win.height = fbuf->fmt.height - try_win.top;
+        if (try_win.left + try_win.width > fbuf->fmt.width)
+       	        try_win.width = fbuf->fmt.width - try_win.left;
+
 	try_win.width &= ~1;
 	try_win.height &= ~1;
 
@@ -91,7 +93,6 @@ int omap_vout_try_window(struct v4l2_framebuffer *fbuf,
 
 	/* We now have a valid preview window, so go with it */
 	new_win->w = try_win;
-	new_win->field = V4L2_FIELD_ANY;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(omap_vout_try_window);
@@ -118,6 +119,8 @@ int omap_vout_new_window(struct v4l2_rect *crop,
 	win->w = new_win->w;
 	win->field = new_win->field;
 	win->chromakey = new_win->chromakey;
+        if (cpu_is_omap44xx())
+            win->zorder = new_win->zorder;
 
 	/* Adjust the cropping window to allow for resizing limitation */
 	if (cpu_is_omap24xx()) {
@@ -192,6 +195,9 @@ int omap_vout_new_crop(struct v4l2_pix_format *pix,
 	if (try_crop.width <= 0 || try_crop.height <= 0)
 		return -EINVAL;
 
+	if (win->w.width <= 0 || win->w.height <= 0)
+		return -EINVAL;
+
 	if (cpu_is_omap24xx()) {
 		if (crop->height != win->w.height) {
 			/* If we're resizing vertically, we can't support a
@@ -226,7 +232,6 @@ int omap_vout_new_crop(struct v4l2_pix_format *pix,
 		hresize = 2048;
 	else if (cpu_is_omap34xx() && (hresize > 4096))
 		hresize = 4096;
-
 	win->w.width = ((1024 * try_crop.width) / hresize) & ~1;
 	if (win->w.width == 0)
 		win->w.width = 2;

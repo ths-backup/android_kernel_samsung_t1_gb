@@ -297,7 +297,7 @@ static void __init omap_fsample_init(void)
 	omap_board_config = fsample_config;
 	omap_board_config_size = ARRAY_SIZE(fsample_config);
 	omap_serial_init();
-	omap_register_i2c_bus(1, 100, NULL, 0);
+	omap_register_i2c_bus(1, 100, NULL, NULL, 0);
 }
 
 static void __init fsample_init_smc91x(void)
@@ -313,7 +313,6 @@ static void __init omap_fsample_init_irq(void)
 {
 	omap1_init_common_hw();
 	omap_init_irq();
-	omap_gpio_init();
 	fsample_init_smc91x();
 }
 

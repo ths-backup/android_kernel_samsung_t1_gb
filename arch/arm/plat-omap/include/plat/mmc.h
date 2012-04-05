@@ -14,8 +14,14 @@
 #include <linux/types.h>
 #include <linux/device.h>
 #include <linux/mmc/host.h>
+#include <linux/platform_device.h>
 
 #include <plat/board.h>
+#include <plat/omap_hwmod.h>
+
+#ifdef CONFIG_TIWLAN_SDIO
+#include <linux/mmc/card.h>
+#endif
 
 #define OMAP15XX_NR_MMC		1
 #define OMAP16XX_NR_MMC		2
@@ -43,12 +49,101 @@
 
 #define OMAP_MMC_MAX_SLOTS	2
 
+#ifdef CONFIG_TIWLAN_SDIO
+struct embedded_sdio_data {
+	struct sdio_cis cis;
+	struct sdio_cccr cccr;
+	struct sdio_embedded_func *funcs;
+	unsigned int quirks;
+};
+#endif
+
+struct mmc_dev_attr {
+	u8 flags;
+};
+
+enum {
+	OMAP_HSMMC_SYSCONFIG = 0,
+	OMAP_HSMMC_SYSSTATUS,
+	OMAP_HSMMC_CON,
+	OMAP_HSMMC_BLK,
+	OMAP_HSMMC_ARG,
+	OMAP_HSMMC_CMD,
+	OMAP_HSMMC_RSP10,
+	OMAP_HSMMC_RSP32,
+	OMAP_HSMMC_RSP54,
+	OMAP_HSMMC_RSP76,
+	OMAP_HSMMC_DATA,
+	OMAP_HSMMC_PSTATE,
+	OMAP_HSMMC_HCTL,
+	OMAP_HSMMC_SYSCTL,
+	OMAP_HSMMC_STAT,
+	OMAP_HSMMC_IE,
+	OMAP_HSMMC_ISE,
+	OMAP_HSMMC_CAPA,
+	OMAP_HSMMC_CUR_CAPA,
+	OMAP_HSMMC_FE,
+	OMAP_HSMMC_ADMA_ES,
+	OMAP_HSMMC_ADMA_SAL,
+	OMAP_HSMMC_REV,
+};
+
+static const u16 omap3_mmc_reg_map[] = {
+	[OMAP_HSMMC_SYSCONFIG] = 0x0010,
+	[OMAP_HSMMC_SYSSTATUS] = 0x0014,
+	[OMAP_HSMMC_CON] = 0x002C,
+	[OMAP_HSMMC_BLK] = 0x0104,
+	[OMAP_HSMMC_ARG] = 0x0108,
+	[OMAP_HSMMC_CMD] = 0x010C,
+	[OMAP_HSMMC_RSP10] = 0x0110,
+	[OMAP_HSMMC_RSP32] = 0x0114,
+	[OMAP_HSMMC_RSP54] = 0x0118,
+	[OMAP_HSMMC_RSP76] = 0x011C,
+	[OMAP_HSMMC_DATA] = 0x0120,
+	[OMAP_HSMMC_PSTATE] = 0x0124,
+	[OMAP_HSMMC_HCTL] = 0x0128,
+	[OMAP_HSMMC_SYSCTL] = 0x012C,
+	[OMAP_HSMMC_STAT] = 0x0130,
+	[OMAP_HSMMC_IE] = 0x0134,
+	[OMAP_HSMMC_ISE] = 0x0138,
+	[OMAP_HSMMC_CAPA] = 0x0140,
+};
+
+static const u16 omap4_mmc_reg_map[] = {
+	[OMAP_HSMMC_SYSCONFIG] = 0x0110,
+	[OMAP_HSMMC_SYSSTATUS] = 0x0114,
+	[OMAP_HSMMC_CON] = 0x012C,
+	[OMAP_HSMMC_BLK] = 0x0204,
+	[OMAP_HSMMC_ARG] = 0x0208,
+	[OMAP_HSMMC_CMD] = 0x020C,
+	[OMAP_HSMMC_RSP10] = 0x0210,
+	[OMAP_HSMMC_RSP32] = 0x0214,
+	[OMAP_HSMMC_RSP54] = 0x0218,
+	[OMAP_HSMMC_RSP76] = 0x021C,
+	[OMAP_HSMMC_DATA] = 0x0220,
+	[OMAP_HSMMC_PSTATE] = 0x0224,
+	[OMAP_HSMMC_HCTL] = 0x0228,
+	[OMAP_HSMMC_SYSCTL] = 0x022C,
+	[OMAP_HSMMC_STAT] = 0x0230,
+	[OMAP_HSMMC_IE] = 0x0234,
+	[OMAP_HSMMC_ISE] = 0x0238,
+	[OMAP_HSMMC_CAPA] = 0x0240,
+	[OMAP_HSMMC_CUR_CAPA] = 0x0248,
+	[OMAP_HSMMC_FE] = 0x0250,
+	[OMAP_HSMMC_ADMA_ES] = 0x0254,
+	[OMAP_HSMMC_ADMA_SAL] = 0x0258,
+	[OMAP_HSMMC_REV] = 0x02FC,
+};
+
 struct omap_mmc_platform_data {
 	/* back-link to device */
 	struct device *dev;
 
 	/* number of slots per controller */
 	unsigned nr_slots:2;
+
+	/* Register Offset Map */
+	u16 *regs_map;
 
 	/* set if your board has components or wiring that limits the
 	 * maximum frequency on the MMC bus */
@@ -66,17 +161,23 @@ struct omap_mmc_platform_data {
 	int (*suspend)(struct device *dev, int slot);
 	int (*resume)(struct device *dev, int slot);
 
+	/* add min bus tput constraint */
+	int(*set_min_bus_tput)(struct device *dev, u8 agent_id, long r);
+
 	/* Return context loss count due to PM states changing */
 	int (*get_context_loss_count)(struct device *dev);
 
 	u64 dma_mask;
 
+	/* integration attributes from the omap_hwmod layer */
+	struct mmc_dev_attr *dev_attr;
+
 	struct omap_mmc_slot_data {
 
-		/* 4 wire signaling is optional, and is used for SD/SDIO/HSMMC;
-		 * 8 wire signaling is also optional, and is used with HSMMC
-		 */
-		u8 wires;
+		/* 4/8 wires and any additional host capabilities
+		 * need to OR'd all capabilities (ref. linux/mmc/host.h) */
+		u8  wires;	/* Used for the MMC driver on omap1 and 2420 */
+		u32 caps;	/* Used for the MMC driver on 2430 and later */
 
 		/*
 		 * nomux means "standard" muxing is wrong on this board, and
@@ -104,6 +205,9 @@ struct omap_mmc_platform_data {
 
 		/* we can put the features above into this variable */
 #define HSMMC_HAS_PBIAS		(1 << 0)
+#define HSMMC_HAS_UPDATED_RESET	(1 << 1)
+#define HSMMC_DVFS_24MHZ_CONST	(1 << 2)
+#define HSMMC_HAS_48MHZ_MASTER_CLK     (1 << 3)
 		unsigned features;
 
 		int switch_pin;			/* gpio (card detect) */
@@ -140,6 +244,13 @@ struct omap_mmc_platform_data {
 
 		unsigned int ban_openended:1;
 
+#ifdef CONFIG_TIWLAN_SDIO
+		struct embedded_sdio_data *embedded_sdio;
+		int (*register_status_notify)
+			(void (*callback)(int card_present, void *dev_id),
+			void *dev_id);
+#endif
+
 	} slots[OMAP_MMC_MAX_SLOTS];
 };
 
@@ -151,8 +262,7 @@ extern void omap_mmc_notify_cover_event(struct device *dev, int slot,
 	defined(CONFIG_MMC_OMAP_HS) || defined(CONFIG_MMC_OMAP_HS_MODULE)
 void omap1_init_mmc(struct omap_mmc_platform_data **mmc_data,
 				int nr_controllers);
-void omap2_init_mmc(struct omap_mmc_platform_data **mmc_data,
-				int nr_controllers);
+void omap2_init_mmc(struct omap_mmc_platform_data *mmc_data, int ctrl_nr);
 int omap_mmc_add(const char *name, int id, unsigned long base,
 				unsigned long size, unsigned int irq,
 				struct omap_mmc_platform_data *data);

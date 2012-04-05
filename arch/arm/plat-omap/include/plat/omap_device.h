@@ -79,6 +79,7 @@ struct omap_device {
 int omap_device_enable(struct platform_device *pdev);
 int omap_device_idle(struct platform_device *pdev);
 int omap_device_shutdown(struct platform_device *pdev);
+int omap_device_reset(struct platform_device *pdev);
 
 /* Core code interface */
 
@@ -101,6 +102,8 @@ struct omap_device *omap_device_build_ss(const char *pdev_name, int pdev_id,
 int omap_device_register(struct omap_device *od);
 int omap_early_device_register(struct omap_device *od);
 
+void __iomem *omap_device_get_rt_va(struct omap_device *od);
+
 /* OMAP PM interface */
 int omap_device_align_pm_lat(struct platform_device *pdev,
 			     u32 new_wakeup_lat_limit);
@@ -114,6 +117,12 @@ int omap_device_enable_hwmods(struct omap_device *od);
 int omap_device_disable_clocks(struct omap_device *od);
 int omap_device_enable_clocks(struct omap_device *od);
 
+int omap_device_enable_wakeup(struct omap_device *od);
+int omap_device_disable_wakeup(struct omap_device *od);
+
+int omap_device_set_rate(struct device *req_dev, struct device *dev,
+			 unsigned long rate);
+unsigned long omap_device_get_rate(struct device *dev);
 
 /*
  * Entries should be kept in latency order ascending

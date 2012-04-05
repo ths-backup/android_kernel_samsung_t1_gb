@@ -43,6 +43,11 @@ menuconfig USB_GADGET
 
 if USB_GADGET
 
+config SAMSUNG_DEVGURU_USB
+        boolean "Enable Devguru USB Support"
+        help
+          Ths will enable Devguru USB support for CDC device.
+
 config USB_GADGET_DEBUG
 	boolean "Debugging messages (DEVELOPMENT)"
 	depends on DEBUG_KERNEL
@@ -158,6 +163,7 @@ config USB_GADGET_FSL_USB2
 	boolean "Freescale Highspeed USB DR Peripheral Controller"
 	depends on FSL_SOC || ARCH_MXC
 	select USB_GADGET_DUALSPEED
+	select USB_FSL_MPH_DR_OF
 	help
 	   Some of Freescale PowerPC processors have a High Speed
 	   Dual-Role(DR) USB controller, which supports device mode.
@@ -189,7 +195,7 @@ config USB_LH7A40X
 
 config USB_GADGET_OMAP
 	boolean "OMAP USB Device Controller"
-	depends on ARCH_OMAP
+	depends on ARCH_OMAP && !USB_MUSB_HDRC
 	select ISP1301_OMAP if MACH_OMAP_H2 || MACH_OMAP_H3 || MACH_OMAP_H4_OTG
 	select USB_OTG_UTILS if ARCH_OMAP
 	help
@@ -208,17 +214,6 @@ config USB_OMAP
 	depends on USB_GADGET_OMAP
 	default USB_GADGET
 	select USB_GADGET_SELECTED
-
-config USB_OTG
-	boolean "OTG Support"
-	depends on USB_GADGET_OMAP && ARCH_OMAP_OTG && USB_OHCI_HCD
-	help
-	   The most notable feature of USB OTG is support for a
-	   "Dual-Role" device, which can act as either a device
-	   or a host.  The initial role choice can be changed
-	   later, when two dual-role devices talk to each other.
-
-	   Select this only if your OMAP board has a Mini-AB connector.
 
 config USB_GADGET_PXA25X
 	boolean "PXA 25x or IXP 4xx"
@@ -254,6 +249,7 @@ config USB_PXA25X_SMALL
 
 config USB_GADGET_R8A66597
 	boolean "Renesas R8A66597 USB Peripheral Controller"
+	depends on !USB_MUSB_HDRC
 	select USB_GADGET_DUALSPEED
 	help
 	   R8A66597 is a discrete USB host and peripheral controller chip that
@@ -364,6 +360,7 @@ config USB_GADGET_MUSB_HDRC
 
 config USB_GADGET_M66592
 	boolean "Renesas M66592 USB Peripheral Controller"
+	depends on !USB_MUSB_HDRC
 	select USB_GADGET_DUALSPEED
 	help
 	   M66592 is a discrete USB peripheral controller chip that
@@ -512,7 +509,7 @@ config USB_LANGWELL
 
 config USB_GADGET_DUMMY_HCD
 	boolean "Dummy HCD (DEVELOPMENT)"
-	depends on USB=y || (USB=m && USB_GADGET=m)
+	depends on !USB_MUSB_HDRC && (USB=y || (USB=m && USB_GADGET=m))
 	select USB_GADGET_DUALSPEED
 	help
 	  This host controller driver emulates USB, looping all data transfer
@@ -836,6 +833,96 @@ config USB_G_PRINTER
 	  For more information, see Documentation/usb/gadget_printer.txt
 	  which includes sample code for accessing the device file.
 
+config USB_ANDROID
+	boolean "Android Gadget"
+	depends on SWITCH
+	help
+	  The Android gadget driver supports multiple USB functions.
+	  The functions can be configured via a board file and may be
+	  enabled and disabled dynamically.
+
+config USB_ANDROID_ACM
+	boolean "Android gadget ACM serial function"
+	depends on USB_ANDROID
+	help
+	  Provides ACM serial function for android gadget driver.
+
+config USB_DUN_SUPPORT
+	boolean "DUN support function"
+	depends on USB_ANDROID_ACM
+	help
+	  Provides USB modem serial driver.
+
+config USB_ANDROID_ADB
+	boolean "Android gadget adb function"
+	depends on USB_ANDROID
+	help
+	  Provides adb function for android gadget driver.
+
+config USB_ANDROID_MASS_STORAGE
+	boolean "Android gadget mass storage function"
+	depends on USB_ANDROID && SWITCH
+	help
+	  Provides USB mass storage function for android gadget driver.
+
+config USB_ANDROID_MTP
+	boolean "Android MTP function"
+	depends on USB_ANDROID
+	help
+	  Provides Media Transfer Protocol (MTP) support for android gadget driver.
+
+config USB_ANDROID_RNDIS
+	boolean "Android gadget RNDIS ethernet function"
+	depends on USB_ANDROID
+	help
+	  Provides RNDIS ethernet function for android gadget driver.
+
+config USB_ANDROID_RNDIS_WCEIS
+        boolean "Use Windows Internet Sharing Class/SubClass/Protocol"
+        depends on USB_ANDROID_RNDIS
+        help
+         Causes the driver to look like a Windows-compatible Internet
+         Sharing device, so Windows auto-detects it.
+
+         If you enable this option, the device is no longer CDC ethernet
+         compatible.
+
+config USB_ANDROID_SAMSUNG_COMPOSITE
+	boolean "Samsung Composite function"
+	depends on USB_ANDROID
+	help
+	  Provides SAMSUNG composite driver using ACM, UMS, ADB, MTP, RNDIS
+
+config USB_ANDROID_SAMSUNG_ESCAPE
+	boolean "Use escape usb host driver in PC side."
+	depends on USB_ANDROID_SAMSUNG_COMPOSITE
+	help
+	  If you enable this option, the device will setting custom IAD for Escape driver.
+
+config USB_ANDROID_SAMSUNG_KIES_UMS
+	boolean "Use UMS composite in Samsung Kies mode"
+	depends on USB_ANDROID_SAMSUNG_ESCAPE
+	help
+	  If you enable this option, the ums will be used in Kies mode.
+
+config CONFIG_USB_ANDROID_SAMSUNG_RNDIS_WITH_MS_COMPOSITE
+	boolean "Use RNDIS with ms composite in PC side."
+	depends on USB_ANDROID_SAMSUNG_COMPOSITE
+	help
+	  If you enable this option, the device will setting custom IAD for to use ms composite.
+
+config USB_ANDROID_SAMSUNG_MTP
+	boolean "Samsung MTP function"
+	depends on USB_ANDROID
+	help
+	  Provides Media Transfer Protocol (MTP) support for samsung gadget driver.
+
+config USB_ANDROID_ACCESSORY
+	boolean "Android USB accessory function"
+	depends on USB_ANDROID
+	help
+	  Provides Android USB Accessory support for android gadget driver.
+
 config USB_CDC_COMPOSITE
 	tristate "CDC Composite Device (Ethernet and ACM)"
 	depends on NET
@@ -863,6 +950,7 @@ config USB_G_NOKIA
 config USB_G_MULTI
 	tristate "Multifunction Composite Gadget (EXPERIMENTAL)"
 	depends on BLOCK && NET
+	select USB_G_MULTI_CDC if !USB_G_MULTI_RNDIS
 	help
 	  The Multifunction Composite Gadget provides Ethernet (RNDIS
 	  and/or CDC Ethernet), mass storage and ACM serial link
@@ -912,6 +1000,34 @@ config USB_G_HID
 
 	  Say "y" to link the driver statically, or "m" to build a
 	  dynamically linked module called "g_hid".
+
+config USB_G_DBGP
+	tristate "EHCI Debug Device Gadget"
+	help
+	  This gadget emulates an EHCI Debug device. This is useful when you want
+	  to interact with an EHCI Debug Port.
+
+	  Say "y" to link the driver statically, or "m" to build a
+	  dynamically linked module called "g_dbgp".
+
+if USB_G_DBGP
+choice
+	prompt "EHCI Debug Device mode"
+	default USB_G_DBGP_SERIAL
+
+config USB_G_DBGP_PRINTK
+	depends on USB_G_DBGP
+	bool "printk"
+	help
+	  Directly printk() received data. No interaction.
+
+config USB_G_DBGP_SERIAL
+	depends on USB_G_DBGP
+	bool "serial"
+	help
+	  Userland can interact using /dev/ttyGSxxx.
+endchoice
+endif
 
 # put drivers that need isochronous transfer support (for audio
 # or video class gadget drivers), or specific hardware, here.

@@ -106,7 +106,7 @@ static void am3517_disable_ethernet_int(void)
 	regval = omap_ctrl_readl(AM35XX_CONTROL_LVL_INTR_CLEAR);
 }
 
-void am3517_evm_ethernet_init(struct emac_platform_data *pdata)
+static void am3517_evm_ethernet_init(struct emac_platform_data *pdata)
 {
 	unsigned int regval;
 
@@ -139,7 +139,6 @@ void am3517_evm_ethernet_init(struct emac_platform_data *pdata)
 static struct i2c_board_info __initdata am3517evm_i2c1_boardinfo[] = {
 	{
 		I2C_BOARD_INFO("s35390a", 0x30),
-		.type		= "s35390a",
 	},
 };
 
@@ -204,10 +203,10 @@ static struct i2c_board_info __initdata am3517evm_i2c3_boardinfo[] = {
 
 static int __init am3517_evm_i2c_init(void)
 {
-	omap_register_i2c_bus(1, 400, NULL, 0);
-	omap_register_i2c_bus(2, 400, am3517evm_i2c2_boardinfo,
+	omap_register_i2c_bus(1, 400, NULL, NULL, 0);
+	omap_register_i2c_bus(2, 400, NULL, am3517evm_i2c2_boardinfo,
 			ARRAY_SIZE(am3517evm_i2c2_boardinfo));
-	omap_register_i2c_bus(3, 400, am3517evm_i2c3_boardinfo,
+	omap_register_i2c_bus(3, 400, NULL, am3517evm_i2c3_boardinfo,
 			ARRAY_SIZE(am3517evm_i2c3_boardinfo));
 
 	return 0;
@@ -347,7 +346,7 @@ static struct omap_dss_board_info am3517_evm_dss_data = {
 	.default_device	= &am3517_evm_lcd_device,
 };
 
-struct platform_device am3517_evm_dss_device = {
+static struct platform_device am3517_evm_dss_device = {
 	.name		= "omapdss",
 	.id		= -1,
 	.dev		= {
@@ -372,18 +371,17 @@ static void __init am3517_evm_init_irq(void)
 
 	omap2_init_common_hw(NULL, NULL);
 	omap_init_irq();
-	omap_gpio_init();
 }
 
-static const struct ehci_hcd_omap_platform_data ehci_pdata __initconst = {
-	.port_mode[0] = EHCI_HCD_OMAP_MODE_PHY,
+static const struct usbhs_omap_platform_data usbhs_pdata __initconst = {
+	.port_mode[0] = OMAP_EHCI_PORT_MODE_PHY,
 #if defined(CONFIG_PANEL_SHARP_LQ043T1DG01) || \
 		defined(CONFIG_PANEL_SHARP_LQ043T1DG01_MODULE)
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+	.port_mode[1] = OMAP_USBHS_PORT_MODE_UNUSED,
 #else
-	.port_mode[1] = EHCI_HCD_OMAP_MODE_PHY,
+	.port_mode[1] = OMAP_EHCI_PORT_MODE_PHY,
 #endif
-	.port_mode[2] = EHCI_HCD_OMAP_MODE_UNKNOWN,
+	.port_mode[2] = OMAP_USBHS_PORT_MODE_UNUSED,
 
 	.phy_reset  = true,
 	.reset_gpio_port[0]  = 57,
@@ -447,7 +445,7 @@ static void __init am3517_evm_init(void)
 
 	/* Configure GPIO for EHCI port */
 	omap_mux_init_gpio(57, OMAP_PIN_OUTPUT);
-	usb_ehci_init(&ehci_pdata);
+	usb_uhhtll_init(&usbhs_pdata);
 	am3517_evm_hecc_init(&am3517_evm_hecc_pdata);
 	/* DSS */
 	am3517_evm_display_init();

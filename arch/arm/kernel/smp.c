@@ -256,6 +256,7 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
 	unsigned int cpu = smp_processor_id();
+	static bool booted;
 
 	printk("CPU%u: Booted secondary processor\n", cpu);
 
@@ -291,7 +292,9 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 	 */
 	percpu_timer_setup();
 
-	calibrate_delay();
+	if (!booted)
+		calibrate_delay();
+	booted = true;
 
 	smp_store_cpu_info(cpu);
 
@@ -429,7 +432,11 @@ static void smp_timer_broadcast(const struct cpumask *mask)
 {
 	send_ipi_message(mask, IPI_TIMER);
 }
+#else
+#define smp_timer_broadcast	NULL
+#endif
 
+#ifndef CONFIG_LOCAL_TIMERS
 static void broadcast_timer_set_mode(enum clock_event_mode mode,
 	struct clock_event_device *evt)
 {
@@ -444,7 +451,6 @@ static void local_timer_setup(struct clock_event_device *evt)
 	evt->rating	= 400;
 	evt->mult	= 1;
 	evt->set_mode	= broadcast_timer_set_mode;
-	evt->broadcast	= smp_timer_broadcast;
 
 	clockevents_register_device(evt);
 }
@@ -456,6 +462,7 @@ void __cpuinit percpu_timer_setup(void)
 	struct clock_event_device *evt = &per_cpu(percpu_clockevent, cpu);
 
 	evt->cpumask = cpumask_of(cpu);
+	evt->broadcast = smp_timer_broadcast;
 
 	local_timer_setup(evt);
 }
@@ -467,10 +474,12 @@ static DEFINE_SPINLOCK(stop_lock);
  */
 static void ipi_cpu_stop(unsigned int cpu)
 {
-	spin_lock(&stop_lock);
-	printk(KERN_CRIT "CPU%u: stopping\n", cpu);
-	dump_stack();
-	spin_unlock(&stop_lock);
+	if (system_state != SYSTEM_HALT) {
+		spin_lock(&stop_lock);
+		printk(KERN_CRIT "CPU%u: stopping\n", cpu);
+		dump_stack();
+		spin_unlock(&stop_lock);
+	}
 
 	set_cpu_online(cpu, false);
 

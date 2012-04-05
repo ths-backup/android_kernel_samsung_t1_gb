@@ -67,25 +67,11 @@ static inline unsigned int gic_irq(unsigned int irq)
 
 /*
  * Routines to acknowledge, disable and enable interrupts
- *
- * Linux assumes that when we're done with an interrupt we need to
- * unmask it, in the same way we need to unmask an interrupt when
- * we first enable it.
- *
- * The GIC has a separate notion of "end of interrupt" to re-enable
- * an interrupt after handling, in order to support hardware
- * prioritisation.
- *
- * We can make the GIC behave in the way that Linux expects by making
- * our "acknowledge" routine disable the interrupt, then mark it as
- * complete.
  */
 static void gic_ack_irq(unsigned int irq)
 {
-	u32 mask = 1 << (irq % 32);
 
 	spin_lock(&irq_controller_lock);
-	writel(mask, gic_dist_base(irq) + GIC_DIST_ENABLE_CLEAR + (gic_irq(irq) / 32) * 4);
 	writel(gic_irq(irq), gic_cpu_base(irq) + GIC_CPU_EOI);
 	spin_unlock(&irq_controller_lock);
 }
@@ -126,6 +112,41 @@ static int gic_set_cpu(unsigned int irq, const struct cpumask *mask_val)
 	return 0;
 }
 #endif
+
+void gic_dist_pending_show_all(void)
+{
+	/*
+	 * Clear all SPI interrupts pending
+	 */
+	u32 val=0;
+	spin_lock(&irq_controller_lock);
+
+	val = readl(gic_data[0].dist_base + GIC_DIST_PENDING_CLEAR + 0x0);
+	if(val)
+		printk("[%s] pending0 = 0x%x\n", __func__, val);
+
+	val = readl(gic_data[0].dist_base + GIC_DIST_PENDING_CLEAR + 0x4);
+	if(val)
+		printk("[%s] pending1 = 0x%x\n", __func__, val);
+
+	val = readl(gic_data[0].dist_base + GIC_DIST_PENDING_CLEAR + 0x8);
+	if(val)
+		printk("[%s] pending2 = 0x%x\n", __func__, val);
+
+	val = readl(gic_data[0].dist_base + GIC_DIST_PENDING_CLEAR + 0xc);
+	if(val)
+		printk("[%s] pending3 = 0x%x\n", __func__, val);
+
+	val = readl(gic_data[0].dist_base + GIC_DIST_PENDING_CLEAR +0x10);
+	if(val)
+		printk("[%s] pending4 = 0x%x\n", __func__, val);
+
+	spin_unlock(&irq_controller_lock);
+
+	return;
+}
+EXPORT_SYMBOL(gic_pending_clear_all);
+
 
 static void gic_handle_cascade_irq(unsigned int irq, struct irq_desc *desc)
 {

@@ -37,8 +37,12 @@
 #include <linux/ratelimit.h>
 #include <linux/kmsg_dump.h>
 #include <linux/syslog.h>
+#include <linux/cpu.h>
+#include <linux/notifier.h>
 
 #include <asm/uaccess.h>
+
+#include <mach/sec_log_buf.h>
 
 /*
  * for_each_console() allows you to iterate on each console
@@ -54,6 +58,10 @@ void asmlinkage __attribute__((weak)) early_printk(const char *fmt, ...)
 }
 
 #define __LOG_BUF_LEN	(1 << CONFIG_LOG_BUF_SHIFT)
+
+#ifdef        CONFIG_DEBUG_LL
+extern void printascii(char *);
+#endif
 
 /* printk's without a loglevel use this.. */
 #define DEFAULT_MESSAGE_LOGLEVEL 4 /* KERN_WARNING */
@@ -165,6 +173,18 @@ void log_buf_kexec_setup(void)
 }
 #endif
 
+#if defined (CONFIG_SAMSUNG_USE_SEC_LOG_BUF)
+static struct sec_log_buf_inf __log_buf_inf = {
+	.log_start = &log_start,
+	.con_start = &con_start,
+	.log_end = &log_end,
+	.log_buf = &log_buf,
+	.log_buf_len = &log_buf_len
+};
+struct sec_log_buf_inf *log_buf_inf = &__log_buf_inf;
+EXPORT_SYMBOL(log_buf_inf);
+#endif /* CONFIG_SAMSUNG_USE_SEC_LOG_BUF */
+
 static int __init log_buf_len_setup(char *str)
 {
 	unsigned size = memparse(str, &str);
@@ -259,6 +279,68 @@ static inline void boot_delay_msec(void)
 }
 #endif
 
+/*
+ * Return the number of unread characters in the log buffer.
+ */
+static int log_buf_get_len(void)
+{
+	return logged_chars;
+}
+
+/*
+ * Clears the ring-buffer
+ */
+void log_buf_clear(void)
+{
+	logged_chars = 0;
+}
+
+/*
+ * Copy a range of characters from the log buffer.
+ */
+int log_buf_copy(char *dest, int idx, int len)
+{
+	int ret, max;
+	bool took_lock = false;
+
+	if (!oops_in_progress) {
+		spin_lock_irq(&logbuf_lock);
+		took_lock = true;
+	}
+
+	max = log_buf_get_len();
+	if (idx < 0 || idx >= max) {
+		ret = -1;
+	} else {
+		if (len > max - idx)
+			len = max - idx;
+		ret = len;
+		idx += (log_end - max);
+		while (len-- > 0)
+			dest[len] = LOG_BUF(idx + len);
+	}
+
+	if (took_lock)
+		spin_unlock_irq(&logbuf_lock);
+
+	return ret;
+}
+
+/*
+ * Commands to do_syslog:
+ *
+ * 	0 -- Close the log.  Currently a NOP.
+ * 	1 -- Open the log. Currently a NOP.
+ * 	2 -- Read from the log.
+ * 	3 -- Read all messages remaining in the ring buffer.
+ * 	4 -- Read and clear all messages remaining in the ring buffer
+ * 	5 -- Clear ring buffer.
+ * 	6 -- Disable printk's to console
+ * 	7 -- Enable printk's to console
+ *	8 -- Set level of messages printed to console
+ *	9 -- Return number of unread characters in the log buffer
+ *     10 -- Return size of the log buffer
+ */
 int do_syslog(int type, char __user *buf, int len, bool from_file)
 {
 	unsigned i, j, limit, count;
@@ -524,10 +606,16 @@ static void call_console_drivers(unsigned start, unsigned end)
 	_call_console_drivers(start_print, end, msg_level);
 }
 
+extern unsigned long logging_mode;
+#define PRINTK_MASK		2
+
 static void emit_log_char(char c)
 {
 	LOG_BUF(log_end) = c;
 	log_end++;
+
+	sec_log_buf_update();
+
 	if (log_end - log_start > log_buf_len)
 		log_start = log_end - log_buf_len;
 	if (log_end - con_start > log_buf_len)
@@ -734,6 +822,9 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	printed_len += vscnprintf(printk_buf + printed_len,
 				  sizeof(printk_buf) - printed_len, fmt, args);
 
+#ifdef	CONFIG_DEBUG_LL
+	printascii(printk_buf);
+#endif
 
 	p = printk_buf;
 
@@ -786,6 +877,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 
 				for (tp = tbuf; tp < tbuf + tlen; tp++)
 					emit_log_char(*tp);
+
 				printed_len += tlen;
 			}
 
@@ -802,7 +894,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	 * Try to acquire and then immediately release the
 	 * console semaphore. The release will do all the
 	 * actual magic (print out buffers, wake up klogd,
-	 * etc). 
+	 * etc).
 	 *
 	 * The acquire_console_semaphore_for_printk() function
 	 * will release 'logbuf_lock' regardless of whether it
@@ -983,6 +1075,43 @@ void resume_console(void)
 	console_suspended = 0;
 	release_console_sem();
 }
+
+/**
+ * console_cpu_notify - print deferred console messages after CPU hotplug
+ * @self: pointer to notfier block
+ * @action: cpu-hotplug events
+ * @hcpu: void poniter to pass any data
+ *
+ * If printk() is called from a CPU that is not online yet, the messages
+ * will be spooled but will not show up on the console.  This function is
+ * called when a new CPU comes online or goes offline and ensures that
+ * any such output gets printed.
+ */
+static int __cpuinit console_cpu_notify(struct notifier_block *self,
+	unsigned long action, void *hcpu)
+{
+	switch (action) {
+	case CPU_ONLINE:
+	case CPU_DEAD:
+	case CPU_DYING:
+	case CPU_DOWN_FAILED:
+	case CPU_UP_CANCELED:
+		if (try_acquire_console_sem() == 0)
+			release_console_sem();
+	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block __cpuinitdata console_nb = {
+	.notifier_call		= console_cpu_notify,
+};
+
+static int __init console_notifier_init(void)
+{
+	register_cpu_notifier(&console_nb);
+	return 0;
+}
+late_initcall(console_notifier_init);
 
 /**
  * acquire_console_sem - lock the console system for exclusive use.

@@ -250,7 +250,9 @@ void thread_group_cputime(struct task_struct *tsk, struct task_cputime *times)
 		times->utime = cputime_add(times->utime, t->utime);
 		times->stime = cputime_add(times->stime, t->stime);
 		times->sum_exec_runtime += t->se.sum_exec_runtime;
-
+	#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+		if (tsk->pid == 0) break;
+	#endif
 		t = next_thread(t);
 	} while (t != tsk);
 

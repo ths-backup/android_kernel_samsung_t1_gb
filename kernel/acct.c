@@ -91,6 +91,26 @@ struct bsd_acct_struct {
 	struct timer_list	timer;
 	struct list_head	list;
 };
+//
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+#define CONTEXT_BUFSIZE 400000  // 1.20yte
+struct context_switched_info {
+	__u32           sec;
+	__u32           nsec;
+	__u32			cputime_sec;
+	__u32			cputime_nsec;	
+	__u32       	pid;
+	char			name[16];
+	unsigned int		vdd_level;
+	int 			cpu;
+};
+u32 context_switched_current = 0;
+u32 	context_switched_start = 0;
+u32 	context_switched_end = 0;
+struct context_switched_info switched_info[CONTEXT_BUFSIZE];
+DECLARE_MUTEX(acct_process_sem);
+
+#endif
 
 static DEFINE_SPINLOCK(acct_lock);
 static LIST_HEAD(acct_list);
@@ -279,18 +299,36 @@ SYSCALL_DEFINE1(acct, const char __user *, name)
 		return -EPERM;
 
 	if (name) {
+	#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+		if(strcmp(name,"flush")) {
+	#endif
 		char *tmp = getname(name);
+	#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+		memset(switched_info,0,CONTEXT_BUFSIZE);
+		context_switched_current = 0;
+		context_switched_start = 0;
+		context_switched_end=0;
+	#endif
+
 		if (IS_ERR(tmp))
 			return (PTR_ERR(tmp));
 		error = acct_on(tmp);
 		putname(tmp);
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+	} else {
+			acct_process(1,0);
+			return 0;
+		}
+#endif
 	} else {
 		struct bsd_acct_struct *acct;
 
 		acct = task_active_pid_ns(current)->bacct;
 		if (acct == NULL)
 			return 0;
-
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+		acct_process(1,0);
+#endif
 		spin_lock(&acct_lock);
 		acct_file_reopen(acct, NULL, NULL);
 		spin_unlock(&acct_lock);
@@ -369,6 +407,7 @@ void acct_exit_ns(struct pid_namespace *ns)
 #define	EXPSIZE		3			/* Base 8 (3 bit) exponent. */
 #define	MAXFRACT	((1 << MANTSIZE) - 1)	/* Maximum fractional value. */
 
+#ifndef CONFIG_CONTEXT_SWITCH_COUNTER
 static comp_t encode_comp_t(unsigned long value)
 {
 	int exp, rnd;
@@ -395,6 +434,7 @@ static comp_t encode_comp_t(unsigned long value)
 	exp += value;			/* and add on the mantissa. */
 	return exp;
 }
+#endif
 
 #if ACCT_VERSION==1 || ACCT_VERSION==2
 /*
@@ -411,6 +451,7 @@ static comp_t encode_comp_t(unsigned long value)
 #define MAXFRACT2       ((1ul << MANTSIZE2) - 1) /* Maximum fractional value. */
 #define MAXEXP2         ((1 <<EXPSIZE2) - 1)    /* Maximum exponent. */
 
+#ifndef CONFIG_CONTEXT_SWITCH_COUNTER
 static comp2_t encode_comp2_t(u64 value)
 {
 	int exp, rnd;
@@ -438,6 +479,7 @@ static comp2_t encode_comp2_t(u64 value)
 		return (value & (MAXFRACT2>>1)) | (exp << (MANTSIZE2-1));
 	}
 }
+#endif
 #endif
 
 #if ACCT_VERSION==3
@@ -474,6 +516,7 @@ static u32 encode_float(u64 value)
 static void do_acct_process(struct bsd_acct_struct *acct,
 		struct pid_namespace *ns, struct file *file)
 {
+#ifndef CONFIG_CONTEXT_SWITCH_COUNTER
 	struct pacct_struct *pacct = &current->signal->pacct;
 	acct_t ac;
 	mm_segment_t fs;
@@ -482,6 +525,10 @@ static void do_acct_process(struct bsd_acct_struct *acct,
 	u64 run_time;
 	struct timespec uptime;
 	struct tty_struct *tty;
+#else
+	mm_segment_t fs;
+	unsigned long flim;
+#endif
 	const struct cred *orig_cred;
 
 	/* Perform file operations on behalf of whoever enabled accounting */
@@ -493,7 +540,7 @@ static void do_acct_process(struct bsd_acct_struct *acct,
 	 */
 	if (!check_free_space(acct, file))
 		goto out;
-
+#ifndef CONFIG_CONTEXT_SWITCH_COUNTER
 	/*
 	 * Fill the accounting struct with the needed info as recorded
 	 * by the different kernel functions.
@@ -563,6 +610,7 @@ static void do_acct_process(struct bsd_acct_struct *acct,
 	 * Kernel segment override to datasegment and write it
 	 * to the accounting file.
 	 */
+#endif // endif not define CONFIG_CONTEXT_SWITCH_COUNTER
 	fs = get_fs();
 	set_fs(KERNEL_DS);
 	/*
@@ -570,8 +618,31 @@ static void do_acct_process(struct bsd_acct_struct *acct,
 	 */
 	flim = current->signal->rlim[RLIMIT_FSIZE].rlim_cur;
 	current->signal->rlim[RLIMIT_FSIZE].rlim_cur = RLIM_INFINITY;
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+	{
+		down(&acct_process_sem);
+		context_switched_end = context_switched_start;
+		context_switched_start = context_switched_current;
+
+		if(context_switched_start > context_switched_end) {
+			file->f_op->write(file,(char *)switched_info + (sizeof(struct context_switched_info) * context_switched_end), sizeof(struct context_switched_info) *(context_switched_start - context_switched_end ) , &file->f_pos);
+			printk("sec:%d, nsec:%d, cpu_sec:%d, cpu_nsec:%d, pid:%d\n",switched_info[context_switched_end].sec, switched_info[context_switched_end].nsec, switched_info[context_switched_end].cputime_sec, switched_info[context_switched_end].cputime_nsec, switched_info[context_switched_end].pid);
+			printk("end : %d, start : %d size : %d\n",context_switched_end, context_switched_start,sizeof(struct context_switched_info) *(context_switched_start - context_switched_end ));
+		} else if(context_switched_start < context_switched_end) {
+			printk("sec:%d, nsec:%d, cpu_sec:%d, cpu_nsec:%d, pid:%d\n",switched_info[context_switched_end].sec, switched_info[context_switched_end].nsec, switched_info[context_switched_end].cputime_sec, switched_info[context_switched_end].cputime_nsec, switched_info[context_switched_end].pid);
+			printk("end : %d, start : %d size1 : %d size2 : %d\n",context_switched_end, context_switched_start,sizeof(struct context_switched_info) * (CONTEXT_BUFSIZE - context_switched_end),sizeof(struct context_switched_info) *(context_switched_start));
+			file->f_op->write(file,(char *)switched_info + (sizeof(struct context_switched_info) *context_switched_end), sizeof(struct context_switched_info) * (CONTEXT_BUFSIZE - context_switched_end), &file->f_pos);
+
+			file->f_op->write(file,(char *)switched_info, sizeof(struct context_switched_info) *(context_switched_start)  , &file->f_pos);
+		} else {
+				;
+		}
+		up(&acct_process_sem);
+	}
+#else
 	file->f_op->write(file, (char *)&ac,
 			       sizeof(acct_t), &file->f_pos);
+#endif
 	current->signal->rlim[RLIMIT_FSIZE].rlim_cur = flim;
 	set_fs(fs);
 out:
@@ -620,17 +691,33 @@ void acct_collect(long exitcode, int group_dead)
 	spin_unlock_irq(&current->sighand->siglock);
 }
 
+
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+static void acct_process_in_ns(struct pid_namespace *ns, u8 acct_val,int cpu)
+#else
 static void acct_process_in_ns(struct pid_namespace *ns)
+#endif
 {
 	struct file *file = NULL;
 	struct bsd_acct_struct *acct;
 
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+	struct timespec uptime,ts;
+	struct task_struct *tsk = current;
+       struct task_struct *t;
+	cputime_t stime;
+#endif
+       
 	acct = ns->bacct;
 	/*
 	 * accelerate the common fastpath:
 	 */
 	if (!acct || !acct->file)
 		return;
+
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+	if(acct_val) {
+#endif
 
 	spin_lock(&acct_lock);
 	file = acct->file;
@@ -640,9 +727,67 @@ static void acct_process_in_ns(struct pid_namespace *ns)
 	}
 	get_file(file);
 	spin_unlock(&acct_lock);
-
 	do_acct_process(acct, ns, file);
 	fput(file);
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+	} else {
+
+      if(tsk->exit_state == EXIT_DEAD)
+         return;
+
+  		spin_lock(&acct_lock);
+        	file = acct->file;
+        	if (unlikely(!file)) {
+               // if(!(acct->file)) {
+			spin_unlock(&acct_lock);
+			return;
+		}
+                get_file(file);
+		spin_unlock(&acct_lock);
+
+#ifdef CONFIG_NO_COUNTING_SWAPPER
+		if(current->tgid == 0)
+			return;
+#endif
+        	if(context_switched_end < context_switched_start) {
+			if(context_switched_current < context_switched_start && context_switched_current >= context_switched_end)
+				return;
+		}
+        	
+		if(context_switched_end > context_switched_start) {
+			if(context_switched_current < context_switched_start || context_switched_current >= context_switched_end)
+				return;
+		}
+        	
+		if(context_switched_current >= CONTEXT_BUFSIZE) {
+			context_switched_current = 0 ;
+		}
+       	
+		do_posix_clock_monotonic_gettime(&uptime);
+		
+		 struct task_cputime cputime;
+        
+        	spin_lock_irq(&current->sighand->siglock);
+        	thread_group_cputime(current, &cputime);
+        	spin_unlock_irq(&current->sighand->siglock);
+
+		stime = cputime.stime;
+		t = tsk;
+		stime = cputime_add(stime, t->stime);
+		
+		cputime_to_timespec(stime,&ts);
+		switched_info[context_switched_current].cputime_sec = ts.tv_sec;
+		switched_info[context_switched_current].cputime_nsec = ts.tv_nsec;
+
+		switched_info[context_switched_current].sec = uptime.tv_sec;
+		switched_info[context_switched_current].nsec = uptime.tv_nsec;
+		switched_info[context_switched_current].pid = current->pid;
+		switched_info[context_switched_current].cpu = cpu;
+		strcpy(switched_info[context_switched_current].name,current->comm);
+		context_switched_current++;
+
+	}
+#endif // endif CONTEXT_SWITCH_COUNTER
 }
 
 /**
@@ -651,7 +796,11 @@ static void acct_process_in_ns(struct pid_namespace *ns)
  *
  * handles process accounting for an exiting task
  */
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+void acct_process(u8 acct_val,int cpu)
+#else
 void acct_process(void)
+#endif
 {
 	struct pid_namespace *ns;
 
@@ -661,5 +810,9 @@ void acct_process(void)
 	 * its parent.
 	 */
 	for (ns = task_active_pid_ns(current); ns != NULL; ns = ns->parent)
+#ifdef CONFIG_CONTEXT_SWITCH_COUNTER
+		acct_process_in_ns(ns, acct_val,cpu);
+#else
 		acct_process_in_ns(ns);
+#endif
 }

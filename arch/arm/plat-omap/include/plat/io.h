@@ -60,6 +60,19 @@
 #define IOMEM(x)		((void __force __iomem *)(x))
 #endif
 
+#ifdef CONFIG_INTERCONNECT_IO_POSTING
+ /*
+  * ARM writes to devices are postable.  Further software
+  * sychronization neeed ex: DSB or register read back
+  */
+#define IO_MAP_TYPE    MT_DEVICE
+#else
+/* ARM writes to devices are sychronized */
+#define IO_MAP_TYPE    MT_MEMORY_SO
+#endif
+
+
+
 #define OMAP1_IO_OFFSET		0x01000000	/* Virtual IO = 0xfefb0000 */
 #define OMAP1_IO_ADDRESS(pa)	IOMEM((pa) - OMAP1_IO_OFFSET)
 
@@ -81,6 +94,7 @@
 
 #define OMAP2_EMU_IO_OFFSET		0xaa800000	/* Emulation */
 #define OMAP2_EMU_IO_ADDRESS(pa)	IOMEM((pa) + OMAP2_EMU_IO_OFFSET)
+
 
 /*
  * ----------------------------------------------------------------------------
@@ -144,6 +158,18 @@
  * ----------------------------------------------------------------------------
  */
 
+/* Select ARM view IO behavior */
+#ifdef CONFIG_INTERCONNECT_IO_POSTING
+/*
+ * ARM writes to devices are postable.  Further software
+ * sychronization neeed ex: DSB or register read back
+ */
+#define IO_MAP_TYPE    MT_DEVICE
+#else
+/* ARM writes to devices are sychronized */
+#define IO_MAP_TYPE    MT_MEMORY_SO
+#endif
+
 /* We map both L3 and L4 on OMAP3 */
 #define L3_34XX_PHYS		L3_34XX_BASE	/* 0x68000000 --> 0xf8000000 */
 #define L3_34XX_VIRT		(L3_34XX_PHYS + OMAP2_L3_IO_OFFSET)
@@ -157,6 +183,10 @@
  * Need to look at the Size 4M for L4.
  * VPOM3430 was not working for Int controller
  */
+
+#define L4_WK_34XX_PHYS		L4_WK_34XX_BASE /* 0x48300000 --> 0xfa300000 */
+#define L4_WK_34XX_VIRT		(L4_WK_34XX_PHYS + OMAP2_L4_IO_OFFSET)
+#define L4_WK_34XX_SIZE		SZ_1M
 
 #define L4_PER_34XX_PHYS	L4_PER_34XX_BASE
 						/* 0x49000000 --> 0xfb000000 */
@@ -196,6 +226,13 @@
 #define L3_44XX_VIRT		(L3_44XX_PHYS + OMAP4_L3_IO_OFFSET)
 #define L3_44XX_SIZE		SZ_1M
 
+#define L3_DSS_44XX_BASE	0x58000000
+#define L3_DSS_44XX_IO_OFFSET	0xA0100000
+
+#define L3_DSS_44XX_PHYS	L3_DSS_44XX_BASE /* 0x58000000 --> 0xf8100000 */
+#define L3_DSS_44XX_VIRT	(L3_DSS_44XX_PHYS + L3_DSS_44XX_IO_OFFSET)
+#define L3_DSS_44XX_SIZE	SZ_1M
+
 #define L4_44XX_PHYS		L4_44XX_BASE	/* 0x4a000000 --> 0xfc000000 */
 #define L4_44XX_VIRT		(L4_44XX_PHYS + OMAP2_L4_IO_OFFSET)
 #define L4_44XX_SIZE		SZ_4M
@@ -205,6 +242,7 @@
 #define L4_PER_44XX_VIRT	(L4_PER_44XX_PHYS + OMAP2_L4_IO_OFFSET)
 #define L4_PER_44XX_SIZE	SZ_4M
 
+#define L4_ABE_44XX_BASE	0x49000000
 #define L4_ABE_44XX_PHYS	L4_ABE_44XX_BASE
 						/* 0x49000000 --> 0xfb000000 */
 #define L4_ABE_44XX_VIRT	(L4_ABE_44XX_PHYS + OMAP2_L4_IO_OFFSET)
@@ -228,12 +266,12 @@
 
 #define OMAP44XX_EMIF2_PHYS	OMAP44XX_EMIF2_BASE
 						/* 0x4d000000 --> 0xfd200000 */
-#define OMAP44XX_EMIF2_VIRT	(OMAP44XX_EMIF2_PHYS + OMAP4_L3_PER_IO_OFFSET)
+#define OMAP44XX_EMIF2_VIRT	(OMAP44XX_EMIF1_VIRT + SZ_1M)
 #define OMAP44XX_EMIF2_SIZE	SZ_1M
 
 #define OMAP44XX_DMM_PHYS	OMAP44XX_DMM_BASE
 						/* 0x4e000000 --> 0xfd300000 */
-#define OMAP44XX_DMM_VIRT	(OMAP44XX_DMM_PHYS + OMAP4_L3_PER_IO_OFFSET)
+#define OMAP44XX_DMM_VIRT	(OMAP44XX_EMIF2_VIRT + SZ_1M)
 #define OMAP44XX_DMM_SIZE	SZ_1M
 /*
  * ----------------------------------------------------------------------------
