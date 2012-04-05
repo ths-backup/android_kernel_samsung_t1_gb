@@ -28,4 +28,3 @@ dir /mnt/.lfs 755 0 0
 dir /lib 755 0 0
 dir /lib/modules 755 0 0
 dir /vendor 755 0 0
-dir /vendor/firmware 755 0 0
