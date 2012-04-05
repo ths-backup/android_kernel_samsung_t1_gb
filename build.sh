@@ -9,7 +9,6 @@ setup ()
     . "$ANDROID_BUILD_TOP"/build/envsetup.sh
 
     KERNEL_DIR="$(dirname "$(readlink -f "$0")")"
-    BUILD_DIR="$KERNEL_DIR/build"
     MODULES=("crypto/pcbc.ko" "drivers/bluetooth/bthid/bthid.ko" "drivers/media/video/gspca/gspca_main.ko" "drivers/media/video/omapgfx/gfx_vout_mod.ko" \
         "drivers/scsi/scsi_wait_scan.ko" "drivers/net/wireless/bcm4330/dhd.ko" "drivers/staging/ti-st/bt_drv.ko" "drivers/staging/omap_hsi/hsi_char.ko" \
         "drivers/staging/ti-st/fm_drv.ko" "drivers/staging/ti-st/gps_drv.ko" "drivers/staging/ti-st/st_drv.ko" "samsung/fm_si4709/Si4709_driver.ko" \
@@ -20,7 +19,7 @@ setup ()
         CCACHE=ccache
         CCACHE_BASEDIR="$KERNEL_DIR"
         CCACHE_COMPRESS=1
-        CCACHE_DIR="$BUILD_DIR/.ccache"
+        CCACHE_DIR="$KERNEL_DIR/.ccache"
         export CCACHE_DIR CCACHE_COMPRESS CCACHE_BASEDIR
     else
         CCACHE=""
@@ -33,19 +32,15 @@ build ()
 {
     local target=$1
     echo "Building for $target"
-    local target_dir="$BUILD_DIR/$target"
     local module
-    [ x = "x$NO_RM" ] && rm -fr "$target_dir"
-    mkdir -p "$target_dir/usr"
-    cp "$KERNEL_DIR/usr/"*.list "$target_dir/usr"
-    sed "s|usr/|$KERNEL_DIR/usr/|g" -i "$target_dir/usr/"*.list
-    [ x = "x$NO_DEFCONFIG" ] && mka -C "$KERNEL_DIR" O="$target_dir" android_${target}_defconfig ARCH=arm HOSTCC="$CCACHE gcc"
+    mka mrproper CROSS_COMPILE="$CCACHE $CROSS_PREFIX"
+    [ x = "x$NO_DEFCONFIG" ] && mka -C "$KERNEL_DIR" android_${target}_defconfig ARCH=arm HOSTCC="$CCACHE gcc"
     if [ x = "x$NO_BUILD" ] ; then
-        mka -C "$KERNEL_DIR" O="$target_dir" ARCH=arm HOSTCC="$CCACHE gcc" CROSS_COMPILE="$CCACHE $CROSS_PREFIX" modules
-        mka -C "$KERNEL_DIR" O="$target_dir" ARCH=arm HOSTCC="$CCACHE gcc" CROSS_COMPILE="$CCACHE $CROSS_PREFIX" zImage
-        cp "$target_dir"/arch/arm/boot/zImage $ANDROID_BUILD_TOP/device/samsung/$target/zImage
+        mka -C "$KERNEL_DIR" ARCH=arm HOSTCC="$CCACHE gcc" CROSS_COMPILE="$CCACHE $CROSS_PREFIX" modules
+        mka -C "$KERNEL_DIR" ARCH=arm HOSTCC="$CCACHE gcc" CROSS_COMPILE="$CCACHE $CROSS_PREFIX" zImage
+        cp "$KERNEL_DIR"/arch/arm/boot/zImage $ANDROID_BUILD_TOP/device/samsung/$target/zImage
         for module in "${MODULES[@]}" ; do
-            cp "$target_dir/$module" $ANDROID_BUILD_TOP/device/samsung/$target/modules
+            cp "$KERNEL_DIR/$module" $ANDROID_BUILD_TOP/device/samsung/$target/modules
         done
     fi
 }
@@ -53,7 +48,7 @@ build ()
 setup
 
 if [ "$1" = clean ] ; then
-    rm -fr "$BUILD_DIR"/*
+    mka mrproper CROSS_COMPILE="$CCACHE $CROSS_PREFIX"
     exit 0
 fi
 
